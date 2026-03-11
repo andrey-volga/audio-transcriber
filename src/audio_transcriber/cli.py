@@ -1,5 +1,9 @@
+import logging
+import logging.handlers
+import os
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +28,27 @@ config_app = typer.Typer(
 
 console = Console()
 err_console = Console(stderr=True, style="bold red")
+
+
+def _setup_logger() -> logging.Logger:
+    log_path = cfg.get_log_path()
+    max_bytes = cfg.get_log_max_bytes()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger("audio_transcriber")
+    if logger.handlers:
+        return logger
+    handler = logging.handlers.RotatingFileHandler(
+        log_path, maxBytes=max_bytes, backupCount=3, encoding="utf-8"
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    return logger
+
+
+def _fmt_duration(seconds: float) -> str:
+    s = int(seconds)
+    return f"{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}"
 
 
 @config_app.command("set-source")
@@ -107,6 +132,10 @@ def main(
     action = cfg.get_after_transcription()
     processed_folder = cfg.get_processed_folder()
 
+    logger = _setup_logger()
+    pid = os.getpid()
+    logger.info(f"TRANSCRIBE_START pid={pid} source={source}")
+
     console.print(f"[bold]Найдено файлов:[/bold] {len(files)}")
     console.print(f"[bold]Модель:[/bold] whisper-{model}  |  [bold]Язык:[/bold] {language}\n")
 
@@ -121,17 +150,21 @@ def main(
             console=console,
         ) as progress:
             progress.add_task(f"Транскрибирую [cyan]{audio_file.name}[/cyan]…")
+            logger.info(f"FILE_START pid={pid} file={audio_file.name}")
             try:
-                text = transcribe(audio_file, model_name=model, language=language)
+                text, duration = transcribe(audio_file, model_name=model, language=language)
                 out.parent.mkdir(parents=True, exist_ok=True)
                 out.write_text(text, encoding="utf-8")
                 console.print(f"[green]✓[/green] {audio_file.name} → [dim]{out}[/dim]")
+                logger.info(f"FILE_DONE pid={pid} file={audio_file.name} audio={_fmt_duration(duration)} output={out}")
                 handle_processed_file(audio_file, action, processed_folder)
                 success += 1
             except Exception as e:
                 err_console.print(f"✗ {audio_file.name}: {e}")
+                logger.info(f"FILE_ERROR pid={pid} file={audio_file.name} error={e}")
                 failed += 1
 
+    logger.info(f"TRANSCRIBE_DONE pid={pid} success={success} failed={failed}")
     console.print(f"\nГотово: [green]{success}[/green] успешно, [red]{failed}[/red] с ошибками.")
     if failed:
         raise typer.Exit(1)
@@ -172,6 +205,10 @@ def watch(
     action = cfg.get_after_transcription()
     processed_folder = cfg.get_processed_folder()
 
+    logger = _setup_logger()
+    pid = os.getpid()
+    logger.info(f"WATCH_START pid={pid} source={source}")
+
     console.print(f"Мониторинг: [cyan]{source}[/cyan] (каждые {interval} сек)")
     console.print("[dim]Ctrl+C для остановки[/dim]\n")
 
@@ -188,12 +225,14 @@ def watch(
             for audio_file in new_files:
                 seen.add(audio_file)
                 out = output_path(audio_file, output_dir)
+                started = datetime.now()
+                logger.info(f"FILE_START pid={pid} file={audio_file.name}")
                 try:
                     result: dict = {}
 
                     def _run(af=audio_file, m=model, lang=language, r=result):
                         try:
-                            r["text"] = transcribe(af, model_name=m, language=lang)
+                            r["text"], r["duration"] = transcribe(af, model_name=m, language=lang)
                         except Exception as exc:
                             r["error"] = exc
 
@@ -205,13 +244,30 @@ def watch(
                     if "error" in result:
                         raise result["error"]
 
+                    finished = datetime.now()
                     out.parent.mkdir(parents=True, exist_ok=True)
                     out.write_text(result["text"], encoding="utf-8")
-                    console.print(f"[green]✓[/green] {audio_file.name} → {out}")
+
+                    audio_dur = _fmt_duration(result["duration"])
+                    started_s = started.strftime("%Y-%m-%d %H:%M:%S")
+                    finished_s = finished.strftime("%Y-%m-%d %H:%M:%S")
+                    console.print(
+                        f"[green]✓[/green] {audio_file.name} → {out}\n"
+                        f"  [dim]audio: {audio_dur}  |  {started_s} → {finished_s}[/dim]"
+                    )
+                    logger.info(
+                        f"FILE_DONE pid={pid} file={audio_file.name}"
+                        f" audio={audio_dur} started={started_s} finished={finished_s}"
+                        f" output={out}"
+                    )
                     handle_processed_file(audio_file, action, processed_folder)
+                    if action in ("move", "delete"):
+                        seen.discard(audio_file)
                 except Exception as e:
                     err_console.print(f"✗ {audio_file.name}: {e}")
+                    logger.info(f"FILE_ERROR pid={pid} file={audio_file.name} error={e}")
 
             time.sleep(interval)
     except KeyboardInterrupt:
+        logger.info(f"WATCH_STOP pid={pid}")
         console.print("\nОстановлено.")

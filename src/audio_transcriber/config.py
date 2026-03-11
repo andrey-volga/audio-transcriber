@@ -56,3 +56,15 @@ def get_processed_folder() -> Path | None:
 def get_monitor_interval() -> int:
     data = load()
     return int(data.get("monitor_interval", 10))
+
+
+def get_log_path() -> Path:
+    data = load()
+    if "log_path" in data:
+        return Path(data["log_path"]).expanduser()
+    return CONFIG_PATH.parent / "transcriber.log"
+
+
+def get_log_max_bytes() -> int:
+    data = load()
+    return int(data.get("log_max_bytes", 10 * 1024 * 1024))

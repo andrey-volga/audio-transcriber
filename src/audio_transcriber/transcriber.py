@@ -16,9 +16,9 @@ def transcribe(
     audio_path: Path,
     model_name: str = "base",
     language: str = "ru",
-) -> str:
+) -> tuple[str, float]:
     """
-    Транскрибирует аудио-файл и возвращает текст.
+    Транскрибирует аудио-файл и возвращает текст и длительность.
 
     Args:
         audio_path: путь к аудио/видео-файлу.
@@ -26,8 +26,14 @@ def transcribe(
         language: код языка транскрибации (ru, en, ...).
 
     Returns:
-        Строка с транскрипцией.
+        Кортеж (текст транскрипции, длительность аудио в секундах).
+        Длительность берётся из конца последнего сегмента (0.0 если сегментов нет).
     """
     model = _load_model(model_name)
     segments, _ = model.transcribe(str(audio_path), language=language)
-    return " ".join(segment.text.strip() for segment in segments).strip()
+    parts = []
+    duration = 0.0
+    for segment in segments:
+        parts.append(segment.text.strip())
+        duration = segment.end
+    return " ".join(parts).strip(), duration

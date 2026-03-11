@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from audio_transcriber.cli import app
+from audio_transcriber.cli import app, _fmt_duration
 
 runner = CliRunner()
 
@@ -34,8 +34,9 @@ def test_nonexistent_file(tmp_path):
 
 
 def test_transcribe_single_file(tmp_path, audio_file, mocker):
-    mocker.patch("audio_transcriber.cli.transcribe", return_value="Привет, это тестовая транскрипция.")
+    mocker.patch("audio_transcriber.cli.transcribe", return_value=("Привет, это тестовая транскрипция.", 42.0))
     mocker.patch("audio_transcriber.cli.handle_processed_file")
+    mocker.patch("audio_transcriber.cli._setup_logger")
     result = runner.invoke(app, ["main", str(audio_file), "--output", str(tmp_path)])
     assert result.exit_code == 0, result.output
     # Output file is named [YYYY-MM-DD sample].md
@@ -49,8 +50,9 @@ def test_transcribe_directory(tmp_path, mocker):
     (tmp_path / "a.mp3").touch()
     (tmp_path / "b.wav").touch()
     out_dir = tmp_path / "out"
-    mocker.patch("audio_transcriber.cli.transcribe", return_value="текст")
+    mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 0.0))
     mocker.patch("audio_transcriber.cli.handle_processed_file")
+    mocker.patch("audio_transcriber.cli._setup_logger")
     result = runner.invoke(app, ["main", str(tmp_path), "--output", str(out_dir)])
     assert result.exit_code == 0, result.output
     txt_files = list(out_dir.glob("*.md"))
@@ -66,12 +68,128 @@ def test_transcribe_error_continues(tmp_path, mocker):
     def side_effect(path, **kwargs):
         if path.name == "bad.wav":
             raise RuntimeError("сломалось")
-        return "хороший текст"
+        return ("хороший текст", 10.0)
 
     mocker.patch("audio_transcriber.cli.transcribe", side_effect=side_effect)
     mocker.patch("audio_transcriber.cli.handle_processed_file")
+    mocker.patch("audio_transcriber.cli._setup_logger")
     result = runner.invoke(app, ["main", str(tmp_path), "--output", str(out_dir)])
     assert result.exit_code == 1  # есть ошибка
     txt_files = list(out_dir.glob("*.md"))
     assert len(txt_files) == 1
     assert txt_files[0].read_text() == "хороший текст"
+
+
+# --- _fmt_duration ---
+
+def test_fmt_duration_zero():
+    assert _fmt_duration(0) == "00:00:00"
+
+
+def test_fmt_duration_seconds_only():
+    assert _fmt_duration(65) == "00:01:05"
+
+
+def test_fmt_duration_hours():
+    assert _fmt_duration(3661) == "01:01:01"
+
+
+def test_fmt_duration_large():
+    assert _fmt_duration(3600 * 10) == "10:00:00"
+
+
+# --- watch ---
+
+def test_watch_transcribes_new_file(tmp_path, mocker):
+    (tmp_path / "a.mp3").touch()
+    out_dir = tmp_path / "out"
+    mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 30.0))
+    mocker.patch("audio_transcriber.cli.handle_processed_file")
+    mocker.patch("audio_transcriber.cli._setup_logger")
+    mocker.patch("audio_transcriber.cli.cfg.get_default_output", return_value=out_dir)
+    mocker.patch("time.sleep", side_effect=KeyboardInterrupt)
+
+    result = runner.invoke(app, ["watch", str(tmp_path)])
+    assert result.exit_code == 0
+    md_files = list(out_dir.glob("*.md"))
+    assert len(md_files) == 1
+    assert md_files[0].read_text() == "текст"
+
+
+def test_watch_output_shows_duration(tmp_path, mocker):
+    (tmp_path / "a.mp3").touch()
+    mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 3661.0))
+    mocker.patch("audio_transcriber.cli.handle_processed_file")
+    mocker.patch("audio_transcriber.cli._setup_logger")
+    mocker.patch("audio_transcriber.cli.cfg.get_default_output", return_value=None)
+    mocker.patch("time.sleep", side_effect=KeyboardInterrupt)
+
+    result = runner.invoke(app, ["watch", str(tmp_path)])
+    assert "01:01:01" in result.output
+
+
+def test_watch_skips_already_seen_file(tmp_path, mocker):
+    """Файл с action=keep не должен обрабатываться повторно."""
+    (tmp_path / "a.mp3").touch()
+    transcribe_mock = mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 10.0))
+    mocker.patch("audio_transcriber.cli.handle_processed_file")
+    mocker.patch("audio_transcriber.cli._setup_logger")
+    mocker.patch("audio_transcriber.cli.cfg.get_default_output", return_value=None)
+    mocker.patch("audio_transcriber.cli.cfg.get_after_transcription", return_value="keep")
+
+    call_count = 0
+
+    def sleep_side_effect(n):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 2:
+            raise KeyboardInterrupt
+
+    mocker.patch("time.sleep", side_effect=sleep_side_effect)
+
+    runner.invoke(app, ["watch", str(tmp_path)])
+    assert transcribe_mock.call_count == 1
+
+
+def test_watch_reprocesses_after_move(tmp_path, mocker):
+    """После move файл убирается из seen и при повторном появлении обрабатывается снова."""
+    (tmp_path / "a.mp3").touch()
+    transcribe_mock = mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 10.0))
+    mocker.patch("audio_transcriber.cli.handle_processed_file")
+    mocker.patch("audio_transcriber.cli._setup_logger")
+    mocker.patch("audio_transcriber.cli.cfg.get_default_output", return_value=None)
+    mocker.patch("audio_transcriber.cli.cfg.get_after_transcription", return_value="move")
+
+    call_count = 0
+
+    def sleep_side_effect(n):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 2:
+            raise KeyboardInterrupt
+
+    mocker.patch("time.sleep", side_effect=sleep_side_effect)
+
+    runner.invoke(app, ["watch", str(tmp_path)])
+    assert transcribe_mock.call_count == 2
+
+
+def test_watch_continues_on_error(tmp_path, mocker):
+    """Ошибка транскрибации одного файла не останавливает watch."""
+    (tmp_path / "bad.mp3").touch()
+    (tmp_path / "good.wav").touch()
+
+    def side_effect(path, **kwargs):
+        if path.name == "bad.mp3":
+            raise RuntimeError("сломалось")
+        return ("текст", 5.0)
+
+    mocker.patch("audio_transcriber.cli.transcribe", side_effect=side_effect)
+    mocker.patch("audio_transcriber.cli.handle_processed_file")
+    mocker.patch("audio_transcriber.cli._setup_logger")
+    mocker.patch("audio_transcriber.cli.cfg.get_default_output", return_value=None)
+    mocker.patch("time.sleep", side_effect=KeyboardInterrupt)
+
+    result = runner.invoke(app, ["watch", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "сломалось" in result.output
