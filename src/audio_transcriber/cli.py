@@ -5,6 +5,7 @@ import typer
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
+from audio_transcriber import config as cfg
 from audio_transcriber.transcriber import transcribe
 from audio_transcriber.utils import collect_audio_files, output_path
 
@@ -13,18 +14,47 @@ app = typer.Typer(
     help="Локальная транскрибация аудио/видео-файлов в текст (Whisper, CPU).",
     add_completion=False,
 )
+config_app = typer.Typer(
+    name="transcribe-config",
+    help="Управление конфигурацией audio-transcriber.",
+    add_completion=False,
+)
 
 console = Console()
 err_console = Console(stderr=True, style="bold red")
 
 
+@config_app.command("set-source")
+def config_set_source(
+    path: Path = typer.Argument(..., help="Путь к папке с аудио-файлами по умолчанию."),
+) -> None:
+    """Установить папку с аудио по умолчанию."""
+    if not path.is_dir():
+        err_console.print(f"Ошибка: '{path}' не является директорией.")
+        raise typer.Exit(1)
+    data = cfg.load()
+    data["default_source"] = str(path.resolve())
+    cfg.save(data)
+    console.print(f"[green]✓[/green] Дефолтная папка установлена: [cyan]{path.resolve()}[/cyan]")
+
+
+@config_app.command("show")
+def config_show() -> None:
+    """Показать текущую конфигурацию."""
+    data = cfg.load()
+    if not data:
+        console.print("[dim]Конфигурация пуста. Файл:[/dim] " + str(cfg.CONFIG_PATH))
+        return
+    console.print(f"[bold]Конфиг:[/bold] {cfg.CONFIG_PATH}")
+    for key, value in data.items():
+        console.print(f"  {key} = {value}")
+
+
 @app.command()
 def main(
-    source: Path = typer.Argument(
-        ...,
-        help="Путь к аудио-файлу или директории с аудио-файлами.",
-        exists=True,
-        readable=True,
+    source: Optional[Path] = typer.Argument(
+        None,
+        help="Путь к аудио-файлу или директории. Если не указан — берётся из конфига.",
     ),
     output_dir: Optional[Path] = typer.Option(
         None,
@@ -43,6 +73,20 @@ def main(
     ),
 ) -> None:
     """Транскрибирует аудио/видео-файл(ы) в TXT."""
+    if source is None:
+        source = cfg.get_default_source()
+        if source is None:
+            err_console.print(
+                "Ошибка: не указан source и не задана дефолтная папка. "
+                "Используй: transcribe-config set-source /path/to/folder"
+            )
+            raise typer.Exit(1)
+        console.print(f"[dim]Источник из конфига: {source}[/dim]")
+
+    if not source.exists():
+        err_console.print(f"Ошибка: путь не найден: '{source}'")
+        raise typer.Exit(1)
+
     if output_dir:
         output_dir.mkdir(parents=True, exist_ok=True)
 

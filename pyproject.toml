@@ -12,6 +12,7 @@ dependencies = [
 
 [project.scripts]
 transcribe = "audio_transcriber.cli:app"
+transcribe-config = "audio_transcriber.cli:config_app"
 
 [build-system]
 requires = ["hatchling"]
