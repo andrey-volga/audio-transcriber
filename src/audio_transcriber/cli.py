@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from audio_transcriber import config as cfg
+from audio_transcriber.polisher import ERROR_PREFIX, polish_text
 from audio_transcriber.transcriber import transcribe
 from audio_transcriber.utils import collect_audio_files, handle_processed_file, output_path
 
@@ -51,6 +52,33 @@ def _fmt_duration(seconds: float) -> str:
     return f"{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}"
 
 
+def _ts() -> str:
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _fmt_elapsed(start: datetime) -> str:
+    s = int((datetime.now() - start).total_seconds())
+    if s < 60:
+        return f"{s}s"
+    return f"{s // 60}m {s % 60:02d}s"
+
+
+def _print(icon: str, icon_style: str, name: str, model: str, elapsed: str = "", extra: str = "", path: Path | None = None) -> None:
+    parts = [
+        f"[dim]{_ts()}[/dim]",
+        f"[{icon_style}]{icon}[/{icon_style}]",
+        name,
+        f"[dim][{model}][/dim]",
+    ]
+    if elapsed:
+        parts.append(f"[dim]{elapsed}[/dim]")
+    if extra:
+        parts.append(f"[dim]{extra}[/dim]")
+    if path is not None:
+        parts.append(f"[dim]→  {path}[/dim]")
+    console.print("  ".join(parts))
+
+
 @config_app.command("set-source")
 def config_set_source(
     path: Path = typer.Argument(..., help="Путь к папке с аудио-файлами по умолчанию."),
@@ -65,16 +93,123 @@ def config_set_source(
     console.print(f"[green]✓[/green] Дефолтная папка установлена: [cyan]{path.resolve()}[/cyan]")
 
 
+@config_app.command("set-output")
+def config_set_output(
+    path: Path = typer.Argument(..., help="Папка для сохранения сырого текста транскрибации."),
+) -> None:
+    """Установить папку для сырого вывода транскрибации."""
+    data = cfg.load()
+    data["default_output"] = str(path.expanduser().resolve())
+    cfg.save(data)
+    console.print(f"[green]✓[/green] Папка вывода установлена: [cyan]{path.expanduser().resolve()}[/cyan]")
+
+
+@config_app.command("set-polish-output")
+def config_set_polish_output(
+    path: Path = typer.Argument(..., help="Папка для сохранения очищенного текста (DeepSeek)."),
+) -> None:
+    """Установить папку для очищенного вывода (DeepSeek)."""
+    data = cfg.load()
+    data["polish_output"] = str(path.expanduser().resolve())
+    cfg.save(data)
+    console.print(f"[green]✓[/green] Папка очищенного вывода установлена: [cyan]{path.expanduser().resolve()}[/cyan]")
+
+
 @config_app.command("show")
 def config_show() -> None:
     """Показать текущую конфигурацию."""
     data = cfg.load()
-    if not data:
-        console.print("[dim]Конфигурация пуста. Файл:[/dim] " + str(cfg.CONFIG_PATH))
-        return
     console.print(f"[bold]Конфиг:[/bold] {cfg.CONFIG_PATH}")
     for key, value in data.items():
         console.print(f"  {key} = {value}")
+    defaults = {
+        "default_source": cfg.get_default_source(),
+        "default_output": cfg.get_default_output(),
+        "polish_output": cfg.get_polish_output(),
+        "deepseek_model": cfg.get_deepseek_model(),
+        "default_model": cfg.get_default_model() or "base",
+    }
+    console.print("\n[bold]Эффективные значения:[/bold]")
+    for key, value in defaults.items():
+        marker = "" if key in data else " [dim](по умолчанию)[/dim]"
+        console.print(f"  {key} = {value}{marker}")
+
+
+def _do_polish(text: str, raw_name: str, polish_out: Path) -> None:
+    """Очищает текст через DeepSeek, сохраняет и печатает статус."""
+    deepseek_model = cfg.get_deepseek_model()
+    p_start = datetime.now()
+    _print("◦", "dim", raw_name, deepseek_model, extra="очистка")
+    polished = polish_text(text, model=deepseek_model)
+    polish_out.parent.mkdir(parents=True, exist_ok=True)
+    polish_out.write_text(polished, encoding="utf-8")
+    if polished.startswith(ERROR_PREFIX):
+        _print("⚠", "yellow", raw_name, deepseek_model, elapsed=_fmt_elapsed(p_start), path=polish_out)
+    else:
+        _print("✦", "cyan", raw_name, deepseek_model, elapsed=_fmt_elapsed(p_start), path=polish_out)
+
+
+@app.command()
+def polish(
+    source: Optional[Path] = typer.Argument(
+        None,
+        help="Текстовый файл или папка для очистки. Если не указан — берётся default_output из конфига.",
+    ),
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output", "-o",
+        help="Куда сохранить результат. По умолчанию — папка polish_output из конфига.",
+    ),
+) -> None:
+    """Очищает текстовый файл(ы) через DeepSeek."""
+    if source is None:
+        source = cfg.get_default_output()
+        if source is None:
+            err_console.print(
+                "Ошибка: не указан source и не задана default_output. "
+                "Используй: transcribe-config set-output /path/to/folder"
+            )
+            raise typer.Exit(1)
+        console.print(f"[dim]Источник из конфига: {source}[/dim]")
+
+    if not source.exists():
+        err_console.print(f"Ошибка: путь не найден: '{source}'")
+        raise typer.Exit(1)
+
+    files = [source] if source.is_file() else sorted(source.glob("*.md"))
+    if not files:
+        err_console.print(f"Нет .md файлов в папке: '{source}'")
+        raise typer.Exit(1)
+
+    polish_dir = cfg.get_polish_output()
+    success, failed = 0, 0
+
+    for file in files:
+        raw_text = file.read_text(encoding="utf-8")
+        if output and source.is_file():
+            out = output
+        elif output:
+            out = output / file.name
+        else:
+            out = polish_dir / file.name
+
+        deepseek_model = cfg.get_deepseek_model()
+        p_start = datetime.now()
+        _print("◦", "dim", file.name, deepseek_model, extra="очистка")
+        polished = polish_text(raw_text, model=deepseek_model)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(polished, encoding="utf-8")
+        if polished.startswith(ERROR_PREFIX):
+            _print("⚠", "yellow", file.name, deepseek_model, elapsed=_fmt_elapsed(p_start), path=out)
+            failed += 1
+        else:
+            _print("✦", "cyan", file.name, deepseek_model, elapsed=_fmt_elapsed(p_start), path=out)
+            success += 1
+
+    if len(files) > 1:
+        console.print(f"\nГотово: [cyan]{success}[/cyan] очищено, [red]{failed}[/red] с ошибками.")
+    if failed:
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -131,38 +266,41 @@ def main(
 
     action = cfg.get_after_transcription()
     processed_folder = cfg.get_processed_folder()
+    whisper_model = f"whisper-{model}"
 
     logger = _setup_logger()
     pid = os.getpid()
     logger.info(f"TRANSCRIBE_START pid={pid} source={source}")
 
-    console.print(f"[bold]Найдено файлов:[/bold] {len(files)}")
-    console.print(f"[bold]Модель:[/bold] whisper-{model}  |  [bold]Язык:[/bold] {language}\n")
+    console.print(f"[bold]Файлов:[/bold] {len(files)}  [bold]Модель:[/bold] {whisper_model}  [bold]Язык:[/bold] {language}\n")
 
     success, failed = 0, 0
 
     for audio_file in files:
         out = output_path(audio_file, output_dir)
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True,
-            console=console,
-        ) as progress:
-            progress.add_task(f"Транскрибирую [cyan]{audio_file.name}[/cyan]…")
-            logger.info(f"FILE_START pid={pid} file={audio_file.name}")
-            try:
-                text, duration = transcribe(audio_file, model_name=model, language=language)
-                out.parent.mkdir(parents=True, exist_ok=True)
-                out.write_text(text, encoding="utf-8")
-                console.print(f"[green]✓[/green] {audio_file.name} → [dim]{out}[/dim]")
-                logger.info(f"FILE_DONE pid={pid} file={audio_file.name} audio={_fmt_duration(duration)} output={out}")
-                handle_processed_file(audio_file, action, processed_folder)
-                success += 1
-            except Exception as e:
-                err_console.print(f"✗ {audio_file.name}: {e}")
-                logger.info(f"FILE_ERROR pid={pid} file={audio_file.name} error={e}")
-                failed += 1
+        t_start = datetime.now()
+        _print("▶", "dim", audio_file.name, whisper_model, extra="транскрибация")
+        logger.info(f"FILE_START pid={pid} file={audio_file.name}")
+
+        try:
+            with Progress(SpinnerColumn(), TextColumn("  [dim]{task.description}[/dim]"), transient=True, console=console) as progress:
+                progress.add_task("обработка…")
+                text, audio_dur = transcribe(audio_file, model_name=model, language=language)
+
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(text, encoding="utf-8")
+            _print("✓", "green", audio_file.name, whisper_model,
+                   elapsed=_fmt_elapsed(t_start), extra=f"audio {_fmt_duration(audio_dur)}", path=out)
+            logger.info(f"FILE_DONE pid={pid} file={audio_file.name} audio={_fmt_duration(audio_dur)} output={out}")
+
+            _do_polish(text, out.name, cfg.get_polish_output() / out.name)
+
+            handle_processed_file(audio_file, action, processed_folder)
+            success += 1
+        except Exception as e:
+            _print("✗", "red", audio_file.name, whisper_model, elapsed=_fmt_elapsed(t_start), extra=str(e))
+            logger.info(f"FILE_ERROR pid={pid} file={audio_file.name} error={e}")
+            failed += 1
 
     logger.info(f"TRANSCRIBE_DONE pid={pid} success={success} failed={failed}")
     console.print(f"\nГотово: [green]{success}[/green] успешно, [red]{failed}[/red] с ошибками.")
@@ -204,12 +342,13 @@ def watch(
     interval = cfg.get_monitor_interval()
     action = cfg.get_after_transcription()
     processed_folder = cfg.get_processed_folder()
+    whisper_model = f"whisper-{model}"
 
     logger = _setup_logger()
     pid = os.getpid()
     logger.info(f"WATCH_START pid={pid} source={source}")
 
-    console.print(f"Мониторинг: [cyan]{source}[/cyan] (каждые {interval} сек)")
+    console.print(f"Мониторинг: [cyan]{source}[/cyan]  [dim]модель: {whisper_model}  интервал: {interval}s[/dim]")
     console.print("[dim]Ctrl+C для остановки[/dim]\n")
 
     seen: set[Path] = set()
@@ -225,8 +364,10 @@ def watch(
             for audio_file in new_files:
                 seen.add(audio_file)
                 out = output_path(audio_file, output_dir)
-                started = datetime.now()
+                t_start = datetime.now()
+                _print("▶", "dim", audio_file.name, whisper_model, extra="транскрибация")
                 logger.info(f"FILE_START pid={pid} file={audio_file.name}")
+
                 try:
                     result: dict = {}
 
@@ -244,27 +385,23 @@ def watch(
                     if "error" in result:
                         raise result["error"]
 
-                    finished = datetime.now()
                     out.parent.mkdir(parents=True, exist_ok=True)
                     out.write_text(result["text"], encoding="utf-8")
-
                     audio_dur = _fmt_duration(result["duration"])
-                    started_s = started.strftime("%Y-%m-%d %H:%M:%S")
-                    finished_s = finished.strftime("%Y-%m-%d %H:%M:%S")
-                    console.print(
-                        f"[green]✓[/green] {audio_file.name} → {out}\n"
-                        f"  [dim]audio: {audio_dur}  |  {started_s} → {finished_s}[/dim]"
-                    )
+                    _print("✓", "green", audio_file.name, whisper_model,
+                           elapsed=_fmt_elapsed(t_start), extra=f"audio {audio_dur}", path=out)
                     logger.info(
                         f"FILE_DONE pid={pid} file={audio_file.name}"
-                        f" audio={audio_dur} started={started_s} finished={finished_s}"
-                        f" output={out}"
+                        f" audio={audio_dur} elapsed={_fmt_elapsed(t_start)} output={out}"
                     )
+
+                    _do_polish(result["text"], out.name, cfg.get_polish_output() / out.name)
+
                     handle_processed_file(audio_file, action, processed_folder)
                     if action in ("move", "delete"):
                         seen.discard(audio_file)
                 except Exception as e:
-                    err_console.print(f"✗ {audio_file.name}: {e}")
+                    _print("✗", "red", audio_file.name, whisper_model, elapsed=_fmt_elapsed(t_start), extra=str(e))
                     logger.info(f"FILE_ERROR pid={pid} file={audio_file.name} error={e}")
 
             time.sleep(interval)

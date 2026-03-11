@@ -68,3 +68,19 @@ def get_log_path() -> Path:
 def get_log_max_bytes() -> int:
     data = load()
     return int(data.get("log_max_bytes", 10 * 1024 * 1024))
+
+
+_POLISH_OUTPUT_DEFAULT = "~/Obsidian/00. Inbox/Transcribes"
+
+
+def get_polish_output() -> Path:
+    data = load()
+    if "polish_output" not in data:
+        data["polish_output"] = _POLISH_OUTPUT_DEFAULT
+        save(data)
+    return Path(data["polish_output"]).expanduser()
+
+
+def get_deepseek_model() -> str:
+    data = load()
+    return data.get("deepseek_model", "deepseek-chat")

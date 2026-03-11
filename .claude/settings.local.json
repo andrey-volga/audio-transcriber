@@ -1,7 +1,30 @@
 {
   "permissions": {
     "allow": [
-      "Bash(gh auth:*)"
+      "Bash(gh auth:*)",
+      "Bash(git add:*)",
+      "Bash(mkdir -p ~/.config/audio-transcriber && cp /home/and/dev/audio-transcriber/config.toml ~/.config/audio-transcriber/config.toml && echo \"done\")",
+      "Bash(uv run:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(transcribe --help 2>&1)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /home/and/dev/audio-transcriber && uv run pytest -q 2>&1 | tail -5"
+          },
+          {
+            "type": "command",
+            "command": "python3 -c \"import sys,json,subprocess; d=json.load(sys.stdin); fp=d.get('tool_input',{}).get('file_path',''); subprocess.run(['uv','tool','install','/home/and/dev/audio-transcriber','--force'],capture_output=True) if 'pyproject.toml' in fp else None\""
+          }
+        ]
+      }
     ]
   }
 }
