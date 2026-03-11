@@ -1,7 +1,7 @@
 import tomllib
 from pathlib import Path
 
-CONFIG_PATH = Path.home() / ".config" / "audio-transcriber" / "config.toml"
+CONFIG_PATH = Path(__file__).parent.parent.parent / "config.toml"
 
 
 def load() -> dict:
@@ -25,5 +25,10 @@ def save(data: dict) -> None:
 def get_default_source() -> Path | None:
     data = load()
     if "default_source" in data:
-        return Path(data["default_source"])
+        return Path(data["default_source"]).expanduser()
     return None
+
+
+def get_default_model() -> str | None:
+    data = load()
+    return data.get("default_model")

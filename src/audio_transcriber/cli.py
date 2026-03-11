@@ -61,10 +61,10 @@ def main(
         "--output", "-o",
         help="Директория для сохранения TXT-файлов (по умолчанию — рядом с исходным файлом).",
     ),
-    model: str = typer.Option(
-        "base",
+    model: Optional[str] = typer.Option(
+        None,
         "--model", "-m",
-        help="Размер модели Whisper: tiny, base, small, medium, large.",
+        help="Размер модели Whisper: tiny, base, small, medium, large. По умолчанию из конфига или base.",
     ),
     language: str = typer.Option(
         "ru",
@@ -73,6 +73,9 @@ def main(
     ),
 ) -> None:
     """Транскрибирует аудио/видео-файл(ы) в TXT."""
+    if model is None:
+        model = cfg.get_default_model() or "base"
+
     if source is None:
         source = cfg.get_default_source()
         if source is None:

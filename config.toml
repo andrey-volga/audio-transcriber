@@ -1,0 +1,13 @@
+# audio-transcriber configuration
+
+# Default folder with audio files
+default_source = "~/00.Inbox/Voice/VoiceRecorder-a7"
+
+# Whisper model for transcription (default: base)
+# Available models:
+#   tiny   — fastest, lowest accuracy (~1 GB RAM)
+#   base   — good balance of speed and accuracy (~1 GB RAM)
+#   small  — better accuracy, slower (~2 GB RAM)
+#   medium — high accuracy, significantly slower (~5 GB RAM)
+#   large  — best accuracy, slowest (~10 GB RAM)
+# default_model = "base"
