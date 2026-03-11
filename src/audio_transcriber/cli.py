@@ -1,3 +1,5 @@
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -7,7 +9,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from audio_transcriber import config as cfg
 from audio_transcriber.transcriber import transcribe
-from audio_transcriber.utils import collect_audio_files, output_path
+from audio_transcriber.utils import collect_audio_files, handle_processed_file, output_path
 
 app = typer.Typer(
     name="transcribe",
@@ -59,7 +61,7 @@ def main(
     output_dir: Optional[Path] = typer.Option(
         None,
         "--output", "-o",
-        help="Директория для сохранения TXT-файлов (по умолчанию — рядом с исходным файлом).",
+        help="Директория для сохранения MD-файлов (по умолчанию — из конфига или рядом с исходным файлом).",
     ),
     model: Optional[str] = typer.Option(
         None,
@@ -90,6 +92,9 @@ def main(
         err_console.print(f"Ошибка: путь не найден: '{source}'")
         raise typer.Exit(1)
 
+    if output_dir is None:
+        output_dir = cfg.get_default_output()
+
     if output_dir:
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -98,6 +103,9 @@ def main(
     except (ValueError, FileNotFoundError) as e:
         err_console.print(f"Ошибка: {e}")
         raise typer.Exit(1)
+
+    action = cfg.get_after_transcription()
+    processed_folder = cfg.get_processed_folder()
 
     console.print(f"[bold]Найдено файлов:[/bold] {len(files)}")
     console.print(f"[bold]Модель:[/bold] whisper-{model}  |  [bold]Язык:[/bold] {language}\n")
@@ -115,8 +123,10 @@ def main(
             progress.add_task(f"Транскрибирую [cyan]{audio_file.name}[/cyan]…")
             try:
                 text = transcribe(audio_file, model_name=model, language=language)
+                out.parent.mkdir(parents=True, exist_ok=True)
                 out.write_text(text, encoding="utf-8")
                 console.print(f"[green]✓[/green] {audio_file.name} → [dim]{out}[/dim]")
+                handle_processed_file(audio_file, action, processed_folder)
                 success += 1
             except Exception as e:
                 err_console.print(f"✗ {audio_file.name}: {e}")
@@ -125,3 +135,83 @@ def main(
     console.print(f"\nГотово: [green]{success}[/green] успешно, [red]{failed}[/red] с ошибками.")
     if failed:
         raise typer.Exit(1)
+
+
+@app.command()
+def watch(
+    source: Optional[Path] = typer.Argument(
+        None,
+        help="Папка для мониторинга. Если не указана — берётся из конфига.",
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model", "-m",
+        help="Размер модели Whisper: tiny, base, small, medium, large.",
+    ),
+    language: str = typer.Option(
+        "ru",
+        "--lang", "-l",
+        help="Код языка транскрибации (ru, en, ...).",
+    ),
+) -> None:
+    """Мониторит папку и автоматически транскрибирует новые файлы."""
+    if model is None:
+        model = cfg.get_default_model() or "base"
+
+    if source is None:
+        source = cfg.get_default_source()
+        if source is None:
+            err_console.print(
+                "Ошибка: не задана папка для мониторинга. "
+                "Укажи путь или задай default_source в конфиге."
+            )
+            raise typer.Exit(1)
+
+    output_dir = cfg.get_default_output()
+    interval = cfg.get_monitor_interval()
+    action = cfg.get_after_transcription()
+    processed_folder = cfg.get_processed_folder()
+
+    console.print(f"Мониторинг: [cyan]{source}[/cyan] (каждые {interval} сек)")
+    console.print("[dim]Ctrl+C для остановки[/dim]\n")
+
+    seen: set[Path] = set()
+
+    try:
+        while True:
+            try:
+                files = collect_audio_files(source)
+            except (ValueError, FileNotFoundError):
+                files = []
+
+            new_files = [f for f in files if f not in seen]
+            for audio_file in new_files:
+                seen.add(audio_file)
+                out = output_path(audio_file, output_dir)
+                try:
+                    result: dict = {}
+
+                    def _run(af=audio_file, m=model, lang=language, r=result):
+                        try:
+                            r["text"] = transcribe(af, model_name=m, language=lang)
+                        except Exception as exc:
+                            r["error"] = exc
+
+                    t = threading.Thread(target=_run, daemon=True)
+                    t.start()
+                    while t.is_alive():
+                        t.join(timeout=0.5)
+
+                    if "error" in result:
+                        raise result["error"]
+
+                    out.parent.mkdir(parents=True, exist_ok=True)
+                    out.write_text(result["text"], encoding="utf-8")
+                    console.print(f"[green]✓[/green] {audio_file.name} → {out}")
+                    handle_processed_file(audio_file, action, processed_folder)
+                except Exception as e:
+                    err_console.print(f"✗ {audio_file.name}: {e}")
+
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        console.print("\nОстановлено.")

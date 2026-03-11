@@ -3,6 +3,7 @@ from pathlib import Path
 
 from audio_transcriber.utils import (
     collect_audio_files,
+    handle_processed_file,
     is_audio_file,
     output_path,
     SUPPORTED_EXTENSIONS,
@@ -51,12 +52,83 @@ def test_collect_nonexistent_path(tmp_path):
         collect_audio_files(tmp_path / "ghost.mp3")
 
 
-def test_output_path_same_dir():
-    p = Path("/data/recordings/interview.mp3")
-    assert output_path(p, None) == Path("/data/recordings/interview.txt")
+def test_output_path_date_format(tmp_path):
+    audio = tmp_path / "interview.mp3"
+    audio.touch()
+    result = output_path(audio, None)
+    # Name must match [YYYY-MM-DD interview].md
+    assert result.suffix == ".md"
+    assert result.stem.startswith("[")
+    assert result.stem.endswith(" interview]")
+    import re
+    assert re.match(r"\[\d{4}-\d{2}-\d{2} interview\]", result.stem)
+    assert result.parent == tmp_path
 
 
 def test_output_path_custom_dir(tmp_path):
-    p = Path("/data/audio.wav")
-    result = output_path(p, tmp_path)
-    assert result == tmp_path / "audio.txt"
+    audio = tmp_path / "clip.wav"
+    audio.touch()
+    out_dir = tmp_path / "output"
+    out_dir.mkdir()
+    result = output_path(audio, out_dir)
+    assert result.parent == out_dir
+    assert result.suffix == ".md"
+    assert "clip" in result.stem
+
+
+def test_output_path_collision_suffix(tmp_path):
+    audio = tmp_path / "note.mp3"
+    audio.touch()
+
+    # First call — no collision
+    first = output_path(audio, None)
+    assert "(2)" not in first.name
+    first.touch()  # simulate existing file
+
+    # Second call — collision, should get (2)
+    second = output_path(audio, None)
+    assert "(2)" in second.name
+    second.touch()
+
+    # Third call — should get (3)
+    third = output_path(audio, None)
+    assert "(3)" in third.name
+
+
+def test_handle_processed_file_keep(tmp_path):
+    audio = tmp_path / "audio.mp3"
+    audio.touch()
+    handle_processed_file(audio, "keep", None)
+    assert audio.exists()
+
+
+def test_handle_processed_file_delete(tmp_path):
+    audio = tmp_path / "audio.mp3"
+    audio.touch()
+    handle_processed_file(audio, "delete", None)
+    assert not audio.exists()
+
+
+def test_handle_processed_file_move(tmp_path):
+    audio = tmp_path / "audio.mp3"
+    audio.touch()
+    done_dir = tmp_path / "Done"
+    handle_processed_file(audio, "move", done_dir)
+    assert not audio.exists()
+    assert (done_dir / "audio.mp3").exists()
+
+
+def test_handle_processed_file_move_creates_dir(tmp_path):
+    audio = tmp_path / "audio.mp3"
+    audio.touch()
+    done_dir = tmp_path / "nested" / "Done"
+    handle_processed_file(audio, "move", done_dir)
+    assert (done_dir / "audio.mp3").exists()
+
+
+def test_handle_processed_file_move_without_folder(tmp_path):
+    """move without processed_folder configured → file stays."""
+    audio = tmp_path / "audio.mp3"
+    audio.touch()
+    handle_processed_file(audio, "move", None)
+    assert audio.exists()

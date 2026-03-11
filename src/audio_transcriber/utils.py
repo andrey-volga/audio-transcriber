@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 SUPPORTED_EXTENSIONS = {".mp3", ".wav", ".mp4", ".m4a", ".ogg", ".flac"}
@@ -27,6 +28,23 @@ def collect_audio_files(path: Path) -> list[Path]:
 
 
 def output_path(audio_path: Path, output_dir: Path | None) -> Path:
-    """Путь к выходному TXT-файлу."""
+    """Путь к выходному MD-файлу. Имя: [YYYY-MM-DD stem].md, с суффиксом при коллизии."""
     target_dir = output_dir if output_dir else audio_path.parent
-    return target_dir / (audio_path.stem + ".txt")
+    mtime = datetime.fromtimestamp(audio_path.stat().st_mtime)
+    date_str = mtime.strftime("%Y-%m-%d")
+    base = f"[{date_str} {audio_path.stem}]"
+    candidate = target_dir / f"{base}.md"
+    counter = 2
+    while candidate.exists():
+        candidate = target_dir / f"{base} ({counter}).md"
+        counter += 1
+    return candidate
+
+
+def handle_processed_file(audio_path: Path, action: str, processed_folder: Path | None) -> None:
+    """Обработать аудио-файл после транскрибации: keep / delete / move."""
+    if action == "delete":
+        audio_path.unlink()
+    elif action == "move" and processed_folder:
+        processed_folder.mkdir(parents=True, exist_ok=True)
+        audio_path.rename(processed_folder / audio_path.name)
