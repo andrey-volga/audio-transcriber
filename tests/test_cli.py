@@ -130,6 +130,52 @@ def test_polish_api_error(tmp_path, audio_file, mocker):
     assert polish_files[0].read_text(encoding="utf-8").startswith(ERROR_PREFIX)
 
 
+def test_polish_success_moves_raw(tmp_path, audio_file, mocker):
+    """После успешной полировки raw-файл перемещается в raw_done_folder."""
+    raw_dir = tmp_path / "raw"
+    raw_done_dir = tmp_path / "raw" / "Done"
+    polish_dir = tmp_path / "polish"
+    mocker.patch("audio_transcriber.cli.transcribe", return_value=("сырой текст", 5.0))
+    mocker.patch("audio_transcriber.cli._setup_logger")
+    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=polish_dir)
+    mocker.patch("audio_transcriber.cli.cfg.get_deepseek_model", return_value="deepseek-chat")
+    mocker.patch("audio_transcriber.cli.cfg.get_raw_done_folder", return_value=raw_done_dir)
+    mocker.patch("audio_transcriber.cli.cfg.get_after_transcription", return_value="keep")
+    mocker.patch("audio_transcriber.cli.cfg.get_processed_folder", return_value=None)
+    mocker.patch("audio_transcriber.cli.polish_text", return_value="чистый текст")
+
+    result = runner.invoke(app, ["main", str(audio_file), "--output", str(raw_dir)])
+    assert result.exit_code == 0, result.output
+
+    raw_files = list(raw_dir.glob("*.md"))
+    done_files = list(raw_done_dir.glob("*.md"))
+    assert len(raw_files) == 0, "raw файл должен быть перемещён из raw/"
+    assert len(done_files) == 1, "raw файл должен оказаться в raw/Done/"
+
+
+def test_polish_error_keeps_raw(tmp_path, audio_file, mocker):
+    """При ошибке API raw-файл остаётся в raw/, не перемещается."""
+    from audio_transcriber.polisher import ERROR_PREFIX
+    raw_dir = tmp_path / "raw"
+    raw_done_dir = tmp_path / "raw" / "Done"
+    polish_dir = tmp_path / "polish"
+    mocker.patch("audio_transcriber.cli.transcribe", return_value=("сырой текст", 5.0))
+    mocker.patch("audio_transcriber.cli._setup_logger")
+    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=polish_dir)
+    mocker.patch("audio_transcriber.cli.cfg.get_deepseek_model", return_value="deepseek-chat")
+    mocker.patch("audio_transcriber.cli.cfg.get_raw_done_folder", return_value=raw_done_dir)
+    mocker.patch("audio_transcriber.cli.cfg.get_after_transcription", return_value="keep")
+    mocker.patch("audio_transcriber.cli.cfg.get_processed_folder", return_value=None)
+    mocker.patch("audio_transcriber.cli.polish_text", return_value=ERROR_PREFIX + "сырой текст")
+
+    result = runner.invoke(app, ["main", str(audio_file), "--output", str(raw_dir)])
+    assert result.exit_code == 0, result.output
+
+    raw_files = list(raw_dir.glob("*.md"))
+    assert len(raw_files) == 1, "raw файл должен остаться в raw/ при ошибке API"
+    assert not raw_done_dir.exists(), "raw/Done/ не должна создаваться при ошибке"
+
+
 # --- _fmt_duration ---
 
 def test_fmt_duration_zero():

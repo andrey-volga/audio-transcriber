@@ -84,3 +84,10 @@ def get_polish_output() -> Path:
 def get_deepseek_model() -> str:
     data = load()
     return data.get("deepseek_model", "deepseek-chat")
+
+
+def get_raw_done_folder() -> Path | None:
+    data = load()
+    if "raw_done_folder" in data:
+        return Path(data["raw_done_folder"]).expanduser()
+    return None

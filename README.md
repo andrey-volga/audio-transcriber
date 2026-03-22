@@ -132,12 +132,14 @@ uv run transcribe polish note.md --output ~/clean/note.md
 | `set-source PATH` | Папка с аудио по умолчанию |
 | `set-output PATH` | Папка для сырых транскрипций |
 | `set-polish-output PATH` | Папка для очищенных транскрипций |
+| `set-raw-done PATH` | Куда перемещать сырой текст после успешной полировки |
 | `show` | Показать конфиг и эффективные значения |
 
 ```bash
-uv run transcribe-config set-source ~/recordings
-uv run transcribe-config set-output ~/00.Inbox/Voice/RawText
-uv run transcribe-config set-polish-output ~/Obsidian/Inbox/Transcribes
+uv run transcribe-config set-source ~/pipeline/inbox
+uv run transcribe-config set-output ~/pipeline/raw
+uv run transcribe-config set-polish-output ~/pipeline/notes
+uv run transcribe-config set-raw-done ~/pipeline/raw/Done
 uv run transcribe-config show
 ```
 
@@ -154,8 +156,9 @@ uv run transcribe-config show
 | `polish_output` | строка (путь) | Папка для очищенных `.md` файлов | `~/Obsidian/00. Inbox/Transcribes` |
 | `deepseek_model` | строка | Модель DeepSeek для очистки | `deepseek-chat` |
 | `default_model` | строка | Модель Whisper: `tiny`, `base`, `small`, `medium`, `large` | `base` |
-| `after_transcription` | строка | Что делать с файлом после: `keep`, `delete`, `move` | `keep` |
-| `processed_folder` | строка (путь) | Куда перемещать файлы при `after_transcription = "move"` | — |
+| `after_transcription` | строка | Что делать с аудио после транскрибации: `keep`, `delete`, `move` | `keep` |
+| `processed_folder` | строка (путь) | Куда перемещать аудио при `after_transcription = "move"` | — |
+| `raw_done_folder` | строка (путь) | Куда перемещать сырой текст после успешной полировки | — |
 | `monitor_interval` | число | Интервал проверки папки в секундах (`watch`) | `10` |
 | `log_path` | строка (путь) | Путь к файлу лога | `~/.config/audio-transcriber/transcriber.log` |
 | `log_max_bytes` | число | Максимальный размер лога в байтах (ротация по размеру) | `10485760` (10 МБ) |

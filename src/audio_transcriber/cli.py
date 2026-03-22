@@ -116,6 +116,17 @@ def config_set_polish_output(
     console.print(f"[green]✓[/green] Папка очищенного вывода установлена: [cyan]{path.expanduser().resolve()}[/cyan]")
 
 
+@config_app.command("set-raw-done")
+def config_set_raw_done(
+    path: Path = typer.Argument(..., help="Папка для сырого текста после успешной полировки."),
+) -> None:
+    """Установить папку для сырого текста после полировки (raw Done)."""
+    data = cfg.load()
+    data["raw_done_folder"] = str(path.expanduser().resolve())
+    cfg.save(data)
+    console.print(f"[green]✓[/green] Папка raw Done установлена: [cyan]{path.expanduser().resolve()}[/cyan]")
+
+
 @config_app.command("show")
 def config_show() -> None:
     """Показать текущую конфигурацию."""
@@ -136,8 +147,8 @@ def config_show() -> None:
         console.print(f"  {key} = {value}{marker}")
 
 
-def _do_polish(text: str, raw_name: str, polish_out: Path) -> None:
-    """Очищает текст через DeepSeek, сохраняет и печатает статус."""
+def _do_polish(text: str, raw_name: str, polish_out: Path) -> bool:
+    """Очищает текст через DeepSeek, сохраняет и печатает статус. Возвращает True при успехе."""
     deepseek_model = cfg.get_deepseek_model()
     p_start = datetime.now()
     _print("◦", "dim", raw_name, deepseek_model, extra="очистка")
@@ -146,8 +157,9 @@ def _do_polish(text: str, raw_name: str, polish_out: Path) -> None:
     polish_out.write_text(polished, encoding="utf-8")
     if polished.startswith(ERROR_PREFIX):
         _print("⚠", "yellow", raw_name, deepseek_model, elapsed=_fmt_elapsed(p_start), path=polish_out)
-    else:
-        _print("✦", "cyan", raw_name, deepseek_model, elapsed=_fmt_elapsed(p_start), path=polish_out)
+        return False
+    _print("✦", "cyan", raw_name, deepseek_model, elapsed=_fmt_elapsed(p_start), path=polish_out)
+    return True
 
 
 @app.command()
@@ -183,6 +195,7 @@ def polish(
         raise typer.Exit(1)
 
     polish_dir = cfg.get_polish_output()
+    raw_done_folder = cfg.get_raw_done_folder()
     success, failed = 0, 0
 
     for file in files:
@@ -194,18 +207,12 @@ def polish(
         else:
             out = polish_dir / file.name
 
-        deepseek_model = cfg.get_deepseek_model()
-        p_start = datetime.now()
-        _print("◦", "dim", file.name, deepseek_model, extra="очистка")
-        polished = polish_text(raw_text, model=deepseek_model)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(polished, encoding="utf-8")
-        if polished.startswith(ERROR_PREFIX):
-            _print("⚠", "yellow", file.name, deepseek_model, elapsed=_fmt_elapsed(p_start), path=out)
-            failed += 1
-        else:
-            _print("✦", "cyan", file.name, deepseek_model, elapsed=_fmt_elapsed(p_start), path=out)
+        ok = _do_polish(raw_text, file.name, out)
+        if ok:
+            handle_processed_file(file, "move", raw_done_folder)
             success += 1
+        else:
+            failed += 1
 
     if len(files) > 1:
         console.print(f"\nГотово: [cyan]{success}[/cyan] очищено, [red]{failed}[/red] с ошибками.")
@@ -294,7 +301,9 @@ def main(
                    elapsed=_fmt_elapsed(t_start), extra=f"audio {_fmt_duration(audio_dur)}", path=out)
             logger.info(f"FILE_DONE pid={pid} file={audio_file.name} audio={_fmt_duration(audio_dur)} output={out}")
 
-            _do_polish(text, out.name, cfg.get_polish_output() / out.name)
+            polish_ok = _do_polish(text, out.name, cfg.get_polish_output() / out.name)
+            if polish_ok:
+                handle_processed_file(out, "move", cfg.get_raw_done_folder())
 
             handle_processed_file(audio_file, action, processed_folder)
             success += 1
@@ -397,7 +406,9 @@ def watch(
                     )
 
                     storage.mark_done(h)
-                    _do_polish(result["text"], out.name, cfg.get_polish_output() / out.name)
+                    polish_ok = _do_polish(result["text"], out.name, cfg.get_polish_output() / out.name)
+                    if polish_ok:
+                        handle_processed_file(out, "move", cfg.get_raw_done_folder())
                     handle_processed_file(audio_file, action, processed_folder)
                 except Exception as e:
                     storage.mark_error(h, str(e))
