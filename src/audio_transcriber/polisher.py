@@ -26,6 +26,7 @@ def polish_text(raw_text: str, model: str = "deepseek-chat") -> str:
         client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
         response = client.chat.completions.create(
             model=model,
+            max_tokens=8192,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": raw_text},
