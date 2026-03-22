@@ -86,6 +86,16 @@ def get_deepseek_model() -> str:
     return data.get("deepseek_model", "deepseek-chat")
 
 
+def get_polish_provider() -> str:
+    data = load()
+    return data.get("polish_provider", "deepseek")
+
+
+def get_groq_model() -> str:
+    data = load()
+    return data.get("groq_model", "llama-3.3-70b-versatile")
+
+
 def get_raw_done_folder() -> Path | None:
     data = load()
     if "raw_done_folder" in data:

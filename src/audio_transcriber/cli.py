@@ -148,17 +148,18 @@ def config_show() -> None:
 
 
 def _do_polish(text: str, raw_name: str, polish_out: Path) -> bool:
-    """Очищает текст через DeepSeek, сохраняет и печатает статус. Возвращает True при успехе."""
-    deepseek_model = cfg.get_deepseek_model()
+    """Очищает текст через настроенного провайдера, сохраняет и печатает статус. Возвращает True при успехе."""
+    provider = cfg.get_polish_provider()
+    model = cfg.get_groq_model() if provider == "groq" else cfg.get_deepseek_model()
     p_start = datetime.now()
-    _print("◦", "dim", raw_name, deepseek_model, extra="очистка")
-    polished = polish_text(text, model=deepseek_model)
+    _print("◦", "dim", raw_name, model, extra="очистка")
+    polished = polish_text(text, model=model, provider=provider)
     polish_out.parent.mkdir(parents=True, exist_ok=True)
     polish_out.write_text(polished, encoding="utf-8")
     if polished.startswith(ERROR_PREFIX):
-        _print("⚠", "yellow", raw_name, deepseek_model, elapsed=_fmt_elapsed(p_start), path=polish_out)
+        _print("⚠", "yellow", raw_name, model, elapsed=_fmt_elapsed(p_start), path=polish_out)
         return False
-    _print("✦", "cyan", raw_name, deepseek_model, elapsed=_fmt_elapsed(p_start), path=polish_out)
+    _print("✦", "cyan", raw_name, model, elapsed=_fmt_elapsed(p_start), path=polish_out)
     return True
 
 
