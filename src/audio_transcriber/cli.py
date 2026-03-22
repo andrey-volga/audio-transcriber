@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from audio_transcriber import config as cfg
+from audio_transcriber import storage
 from audio_transcriber.polisher import ERROR_PREFIX, polish_text
 from audio_transcriber.transcriber import transcribe
 from audio_transcriber.utils import collect_audio_files, handle_processed_file, output_path
@@ -348,10 +349,10 @@ def watch(
     pid = os.getpid()
     logger.info(f"WATCH_START pid={pid} source={source}")
 
+    storage.init_db()
+
     console.print(f"Мониторинг: [cyan]{source}[/cyan]  [dim]модель: {whisper_model}  интервал: {interval}s[/dim]")
     console.print("[dim]Ctrl+C для остановки[/dim]\n")
-
-    seen: set[Path] = set()
 
     try:
         while True:
@@ -360,9 +361,9 @@ def watch(
             except (ValueError, FileNotFoundError):
                 files = []
 
-            new_files = [f for f in files if f not in seen]
-            for audio_file in new_files:
-                seen.add(audio_file)
+            new_files = [(f, h) for f in files if not storage.is_processed(h := storage.file_hash(f))]
+            for audio_file, h in new_files:
+                storage.add_job(audio_file, h)
                 out = output_path(audio_file, output_dir)
                 t_start = datetime.now()
                 _print("▶", "dim", audio_file.name, whisper_model, extra="транскрибация")
@@ -395,12 +396,11 @@ def watch(
                         f" audio={audio_dur} elapsed={_fmt_elapsed(t_start)} output={out}"
                     )
 
+                    storage.mark_done(h)
                     _do_polish(result["text"], out.name, cfg.get_polish_output() / out.name)
-
                     handle_processed_file(audio_file, action, processed_folder)
-                    if action in ("move", "delete"):
-                        seen.discard(audio_file)
                 except Exception as e:
+                    storage.mark_error(h, str(e))
                     _print("✗", "red", audio_file.name, whisper_model, elapsed=_fmt_elapsed(t_start), extra=str(e))
                     logger.info(f"FILE_ERROR pid={pid} file={audio_file.name} error={e}")
 

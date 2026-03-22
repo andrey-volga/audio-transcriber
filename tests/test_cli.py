@@ -3,9 +3,16 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+import audio_transcriber.storage as storage_mod
 from audio_transcriber.cli import app, _fmt_duration
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def isolated_db(tmp_path, monkeypatch):
+    """Redirect SQLite DB to tmp_path so watch tests don't share state."""
+    monkeypatch.setattr(storage_mod, "DB_PATH", tmp_path / "test_jobs.db")
 
 
 @pytest.fixture
@@ -144,7 +151,7 @@ def test_fmt_duration_large():
 # --- watch ---
 
 def test_watch_transcribes_new_file(tmp_path, mocker):
-    (tmp_path / "a.mp3").touch()
+    (tmp_path / "a.mp3").write_bytes(b"audio content")
     out_dir = tmp_path / "out"
     mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 30.0))
     mocker.patch("audio_transcriber.cli.handle_processed_file")
@@ -162,7 +169,7 @@ def test_watch_transcribes_new_file(tmp_path, mocker):
 
 
 def test_watch_output_shows_duration(tmp_path, mocker):
-    (tmp_path / "a.mp3").touch()
+    (tmp_path / "a.mp3").write_bytes(b"audio content")
     mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 3661.0))
     mocker.patch("audio_transcriber.cli.handle_processed_file")
     mocker.patch("audio_transcriber.cli._setup_logger")
@@ -175,9 +182,9 @@ def test_watch_output_shows_duration(tmp_path, mocker):
     assert "01:01:01" in result.output
 
 
-def test_watch_skips_already_seen_file(tmp_path, mocker):
-    """Файл с action=keep не должен обрабатываться повторно."""
-    (tmp_path / "a.mp3").touch()
+def test_watch_skips_already_processed_file(tmp_path, mocker):
+    """Файл с тем же хэшем не обрабатывается повторно (action=keep)."""
+    (tmp_path / "a.mp3").write_bytes(b"audio content")
     transcribe_mock = mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 10.0))
     mocker.patch("audio_transcriber.cli.handle_processed_file")
     mocker.patch("audio_transcriber.cli._setup_logger")
@@ -200,23 +207,26 @@ def test_watch_skips_already_seen_file(tmp_path, mocker):
     assert transcribe_mock.call_count == 1
 
 
-def test_watch_reprocesses_after_move(tmp_path, mocker):
-    """После move файл убирается из seen и при повторном появлении обрабатывается снова."""
-    (tmp_path / "a.mp3").touch()
+def test_watch_processes_new_file_with_same_name(tmp_path, mocker):
+    """Новый файл с тем же именем, но другим содержимым (другой хэш) обрабатывается заново."""
+    f = tmp_path / "a.mp3"
+    f.write_bytes(b"first recording")
     transcribe_mock = mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 10.0))
     mocker.patch("audio_transcriber.cli.handle_processed_file")
     mocker.patch("audio_transcriber.cli._setup_logger")
     mocker.patch("audio_transcriber.cli.cfg.get_default_output", return_value=None)
     mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
     mocker.patch("audio_transcriber.cli.polish_text", return_value="текст")
-    mocker.patch("audio_transcriber.cli.cfg.get_after_transcription", return_value="move")
 
     call_count = 0
 
     def sleep_side_effect(n):
         nonlocal call_count
         call_count += 1
-        if call_count >= 2:
+        if call_count == 1:
+            # Simulate: original moved away, new file with same name but different content
+            f.write_bytes(b"second recording - different content")
+        elif call_count >= 2:
             raise KeyboardInterrupt
 
     mocker.patch("time.sleep", side_effect=sleep_side_effect)
@@ -225,10 +235,35 @@ def test_watch_reprocesses_after_move(tmp_path, mocker):
     assert transcribe_mock.call_count == 2
 
 
+def test_watch_crash_recovery(tmp_path, mocker):
+    """Файл, застрявший в processing (краш предыдущего процесса), обрабатывается повторно."""
+    f = tmp_path / "a.mp3"
+    f.write_bytes(b"audio content")
+
+    # Simulate a previous crashed run: insert file as 'processing'
+    storage_mod.init_db()
+    h = storage_mod.file_hash(f)
+    storage_mod.add_job(f, h)
+    assert storage_mod.is_processed(h)  # stuck in processing
+
+    transcribe_mock = mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 10.0))
+    mocker.patch("audio_transcriber.cli.handle_processed_file")
+    mocker.patch("audio_transcriber.cli._setup_logger")
+    mocker.patch("audio_transcriber.cli.cfg.get_default_output", return_value=None)
+    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
+    mocker.patch("audio_transcriber.cli.polish_text", return_value="текст")
+    mocker.patch("audio_transcriber.cli.cfg.get_after_transcription", return_value="keep")
+    mocker.patch("time.sleep", side_effect=KeyboardInterrupt)
+
+    # watch calls init_db() on startup — should reset 'processing' → 'error', then re-process
+    runner.invoke(app, ["watch", str(tmp_path)])
+    assert transcribe_mock.call_count == 1
+
+
 def test_watch_continues_on_error(tmp_path, mocker):
     """Ошибка транскрибации одного файла не останавливает watch."""
-    (tmp_path / "bad.mp3").touch()
-    (tmp_path / "good.wav").touch()
+    (tmp_path / "bad.mp3").write_bytes(b"bad audio")
+    (tmp_path / "good.wav").write_bytes(b"good audio")
 
     def side_effect(path, **kwargs):
         if path.name == "bad.mp3":
