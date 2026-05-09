@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 
-from audio_transcriber.utils import (
+from tool_audio.utils import (
     collect_audio_files,
     handle_processed_file,
     is_audio_file,

@@ -1,7 +1,7 @@
 import tomllib
 from pathlib import Path
 
-CONFIG_PATH = Path.home() / ".config" / "audio-transcriber" / "config.toml"
+CONFIG_PATH = Path.home() / ".config" / "tool-audio" / "config.toml"
 
 
 def load() -> dict:

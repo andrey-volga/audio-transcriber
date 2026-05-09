@@ -1,4 +1,4 @@
-# audio-transcriber
+# tool-audio
 
 Локальная транскрибация аудио/видео-файлов в текст с помощью Whisper (CPU, оффлайн) с последующей очисткой через DeepSeek.
 
@@ -13,7 +13,7 @@ uv sync
 **Для очистки текста через DeepSeek** — добавить API-ключ:
 
 ```bash
-echo 'DEEPSEEK_API_KEY=sk-...' >> ~/.config/audio-transcriber/.env
+echo 'DEEPSEEK_API_KEY=sk-...' >> ~/.config/tool-audio/.env
 ```
 
 ---
@@ -125,7 +125,7 @@ uv run transcribe polish note.md --output ~/clean/note.md
 
 ### `transcribe-config` — управление конфигурацией
 
-Конфиг хранится в `~/.config/audio-transcriber/config.toml`.
+Конфиг хранится в `~/.config/tool-audio/config.toml`.
 
 | Команда | Описание |
 |---|---|
@@ -147,7 +147,7 @@ uv run transcribe-config show
 
 ## Конфигурация
 
-Файл: `~/.config/audio-transcriber/config.toml`
+Файл: `~/.config/tool-audio/config.toml`
 
 | Ключ | Тип | Описание | Умолчание |
 |---|---|---|---|
@@ -160,7 +160,7 @@ uv run transcribe-config show
 | `processed_folder` | строка (путь) | Куда перемещать аудио при `after_transcription = "move"` | — |
 | `raw_done_folder` | строка (путь) | Куда перемещать сырой текст после успешной полировки | — |
 | `monitor_interval` | число | Интервал проверки папки в секундах (`watch`) | `10` |
-| `log_path` | строка (путь) | Путь к файлу лога | `~/.config/audio-transcriber/transcriber.log` |
+| `log_path` | строка (путь) | Путь к файлу лога | `~/.config/tool-audio/transcriber.log` |
 | `log_max_bytes` | число | Максимальный размер лога в байтах (ротация по размеру) | `10485760` (10 МБ) |
 
 **Пример:**
@@ -176,7 +176,7 @@ processed_folder = "/home/user/recordings/done"
 monitor_interval = 30
 ```
 
-API-ключ DeepSeek хранится отдельно в `~/.config/audio-transcriber/.env`:
+API-ключ DeepSeek хранится отдельно в `~/.config/tool-audio/.env`:
 
 ```
 DEEPSEEK_API_KEY=sk-...

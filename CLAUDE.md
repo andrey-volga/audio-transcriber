@@ -19,7 +19,13 @@ uv run transcribe [SOURCE] [--output DIR] [--model tiny|base|small|medium|large]
 uv run transcribe watch [SOURCE] [--model MODEL] [--lang LANG]
 uv run transcribe polish [SOURCE] [--output PATH]
 uv run transcribe-config set-source|set-output|set-polish-output|show
+
+# Install/update the global CLI (run after any code changes)
+make install
+uv tool install /home/and/dev/tool-audio --reinstall
 ```
+
+> **Важно:** глобальный бинарник `transcribe` (`~/.local/bin/transcribe`) устанавливается отдельно через `uv tool` и **не обновляется автоматически** при изменении кода. После любых изменений в проекте нужно запускать `make install`, иначе глобальная версия будет отставать (например, не вызывать polish в `watch`).
 
 ## Architecture
 
@@ -29,9 +35,9 @@ Python CLI tool for offline audio/video transcription using Whisper. Python 3.13
 - `cli.py` — Typer CLI entry point. Commands: `main` (transcribe files), `watch` (monitor folder), `polish` (DeepSeek cleanup), config commands. Rich progress display, logging, threading for Ctrl+C support.
 - `transcriber.py` — Wraps `faster-whisper`. CPU-only, int8 quantization. Module-level `_model_cache` dict avoids reloading models between files.
 - `utils.py` — Audio file detection (MP3, WAV, MP4, M4A, OGG, FLAC), directory scanning, output path generation, post-transcription file handling (keep/delete/move).
-- `storage.py` — SQLite job store at `~/.config/audio-transcriber/jobs.db`. Tracks processed files by SHA-256 hash (first 64KB). Used by `watch` for persistence across restarts and deduplication by content (not filename). On startup `init_db()` resets stuck `processing` jobs to `error` for crash recovery.
-- `polisher.py` — DeepSeek API integration via OpenAI-compatible client. Reads API key from `~/.config/audio-transcriber/.env`. Returns `ERROR_PREFIX + raw_text` on failure so output is never lost.
-- `config.py` — TOML config at `~/.config/audio-transcriber/config.toml`. Keys: `default_source`, `default_output`, `polish_output`, `raw_done_folder`, `deepseek_model`, `default_model`, `after_transcription`, `processed_folder`, `monitor_interval`, `log_path`, `log_max_bytes`. When generating or editing the config file always include all available keys with inline comments explaining each option.
+- `storage.py` — SQLite job store at `~/.config/tool-audio/jobs.db`. Tracks processed files by SHA-256 hash (first 64KB). Used by `watch` for persistence across restarts and deduplication by content (not filename). On startup `init_db()` resets stuck `processing` jobs to `error` for crash recovery.
+- `polisher.py` — DeepSeek API integration via OpenAI-compatible client. Reads API key from `~/.config/tool-audio/.env`. Returns `ERROR_PREFIX + raw_text` on failure so output is never lost.
+- `config.py` — TOML config at `~/.config/tool-audio/config.toml`. Keys: `default_source`, `default_output`, `polish_output`, `raw_done_folder`, `deepseek_model`, `default_model`, `after_transcription`, `processed_folder`, `monitor_interval`, `log_path`, `log_max_bytes`. When generating or editing the config file always include all available keys with inline comments explaining each option.
 
 **Key behaviors:**
 - Default language is Russian (`ru`); configurable via `--lang`.

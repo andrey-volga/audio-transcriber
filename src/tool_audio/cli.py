@@ -11,11 +11,11 @@ import typer
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from audio_transcriber import config as cfg
-from audio_transcriber import storage
-from audio_transcriber.polisher import ERROR_PREFIX, polish_text
-from audio_transcriber.transcriber import transcribe
-from audio_transcriber.utils import collect_audio_files, handle_processed_file, output_path
+from tool_audio import config as cfg
+from tool_audio import storage
+from tool_audio.polisher import ERROR_PREFIX, polish_text
+from tool_audio.transcriber import transcribe
+from tool_audio.utils import collect_audio_files, handle_processed_file, output_path
 
 app = typer.Typer(
     name="transcribe",
@@ -24,7 +24,7 @@ app = typer.Typer(
 )
 config_app = typer.Typer(
     name="transcribe-config",
-    help="Управление конфигурацией audio-transcriber.",
+    help="Управление конфигурацией tool-audio.",
     add_completion=False,
 )
 
@@ -36,7 +36,7 @@ def _setup_logger() -> logging.Logger:
     log_path = cfg.get_log_path()
     max_bytes = cfg.get_log_max_bytes()
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("audio_transcriber")
+    logger = logging.getLogger("tool_audio")
     if logger.handlers:
         return logger
     handler = logging.handlers.RotatingFileHandler(
@@ -362,7 +362,7 @@ def watch(
     if lock_path.exists():
         old_pid = lock_path.read_text().strip()
         if old_pid and Path(f"/proc/{old_pid}").exists():
-            err_console.print(f"Ошибка: watch уже запущен (pid={old_pid}). Останови его или сервис: systemctl --user stop audio-transcriber")
+            err_console.print(f"Ошибка: watch уже запущен (pid={old_pid}). Останови его или сервис: systemctl --user stop tool-audio")
             raise typer.Exit(1)
     lock_path.write_text(str(pid))
 

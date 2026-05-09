@@ -40,12 +40,12 @@ CLI-инструмент для локальной транскрибации а
   - `move` — переместить в `processed_folder`
 
 ### FR-06: Конфигурация
-- Хранится в `~/.config/audio-transcriber/config.toml`
+- Хранится в `~/.config/tool-audio/config.toml`
 - Управляется через `transcribe-config set-source|set-output|set-polish-output|show`
-- API-ключ DeepSeek: `~/.config/audio-transcriber/.env`
+- API-ключ DeepSeek: `~/.config/tool-audio/.env`
 
 ### FR-07: Логирование
-- Файл: `~/.config/audio-transcriber/audio-transcriber.log`
+- Файл: `~/.config/tool-audio/tool-audio.log`
 - Ротация: до 3 резервных копий при достижении лимита размера (по умолчанию 10 МБ)
 - События: `WATCH_START`, `WATCH_STOP`, `FILE_START`, `FILE_DONE`, `FILE_ERROR`, `TRANSCRIBE_START`, `TRANSCRIBE_DONE`
 
@@ -72,11 +72,11 @@ CLI-инструмент для локальной транскрибации а
 ## Структура проекта
 
 ```
-audio-transcriber/
+tool-audio/
 ├── docs/
 │   └── requirements.md        # этот файл
 ├── src/
-│   └── audio_transcriber/
+│   └── tool_audio/
 │       ├── cli.py             # CLI (Typer): main, watch, polish, config
 │       ├── transcriber.py     # faster-whisper, model cache
 │       ├── utils.py           # форматы, сканирование, output path, file actions

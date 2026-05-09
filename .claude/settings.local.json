@@ -3,11 +3,20 @@
     "allow": [
       "Bash(gh auth:*)",
       "Bash(git add:*)",
-      "Bash(mkdir -p ~/.config/audio-transcriber && cp /home/and/dev/audio-transcriber/config.toml ~/.config/audio-transcriber/config.toml && echo \"done\")",
       "Bash(uv run:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(transcribe --help 2>&1)"
+      "Bash(transcribe --help 2>&1)",
+      "Read(//home/and/.config/tool-audio/**)",
+      "Bash(git -C /home/and/dev/tool-audio log --oneline -6)",
+      "Bash(git -C /home/and/dev/tool-audio show 1a59ca8 --stat)",
+      "Bash(pip show *)",
+      "Bash(python3 -c \"import tool_audio; print\\(tool_audio.__file__\\)\")",
+      "Bash(/home/and/.local/share/uv/tools/tool-audio/bin/python3 -c 'import tool_audio; print\\(tool_audio.__file__\\)')",
+      "Bash(transcribe polish *)",
+      "Read(//home/and/.config/systemd/user/**)",
+      "Bash(systemctl --user status)",
+      "Read(//home/and/.config/**)"
     ]
   },
   "hooks": {
@@ -17,11 +26,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /home/and/dev/audio-transcriber && uv run pytest -q 2>&1 | tail -5"
+            "command": "cd /home/and/dev/tool-audio && uv run pytest -q 2>&1 | tail -5"
           },
           {
             "type": "command",
-            "command": "python3 -c \"import sys,json,subprocess; d=json.load(sys.stdin); fp=d.get('tool_input',{}).get('file_path',''); subprocess.run(['uv','tool','install','/home/and/dev/audio-transcriber','--force'],capture_output=True) if 'pyproject.toml' in fp else None\""
+            "command": "python3 -c \"import sys,json,subprocess; d=json.load(sys.stdin); fp=d.get('tool_input',{}).get('file_path',''); subprocess.run(['make','-C','/home/and/dev/tool-audio','install'],capture_output=True) if 'pyproject.toml' in fp else None\""
           }
         ]
       }

@@ -5,10 +5,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
-_ENV_PATH = Path.home() / ".config" / "audio-transcriber" / ".env"
+_ENV_PATH = Path.home() / ".config" / "tool-audio" / ".env"
 
 SYSTEM_PROMPT = (
-    files("audio_transcriber")
+    files("tool_audio")
     .joinpath("prompts/polish_prompt.md")
     .read_text(encoding="utf-8")
     .strip()

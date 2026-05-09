@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-import audio_transcriber.storage as storage_mod
-from audio_transcriber.cli import app, _fmt_duration
+import tool_audio.storage as storage_mod
+from tool_audio.cli import app, _fmt_duration
 
 runner = CliRunner()
 
@@ -41,11 +41,11 @@ def test_nonexistent_file(tmp_path):
 
 
 def test_transcribe_single_file(tmp_path, audio_file, mocker):
-    mocker.patch("audio_transcriber.cli.transcribe", return_value=("Привет, это тестовая транскрипция.", 42.0))
-    mocker.patch("audio_transcriber.cli.handle_processed_file")
-    mocker.patch("audio_transcriber.cli._setup_logger")
-    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
-    mocker.patch("audio_transcriber.cli.polish_text", return_value="Привет, это тестовая транскрипция.")
+    mocker.patch("tool_audio.cli.transcribe", return_value=("Привет, это тестовая транскрипция.", 42.0))
+    mocker.patch("tool_audio.cli.handle_processed_file")
+    mocker.patch("tool_audio.cli._setup_logger")
+    mocker.patch("tool_audio.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
+    mocker.patch("tool_audio.cli.polish_text", return_value="Привет, это тестовая транскрипция.")
     result = runner.invoke(app, ["main", str(audio_file), "--output", str(tmp_path)])
     assert result.exit_code == 0, result.output
     # Output file is named [YYYY-MM-DD sample].md
@@ -59,11 +59,11 @@ def test_transcribe_directory(tmp_path, mocker):
     (tmp_path / "a.mp3").touch()
     (tmp_path / "b.wav").touch()
     out_dir = tmp_path / "out"
-    mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 0.0))
-    mocker.patch("audio_transcriber.cli.handle_processed_file")
-    mocker.patch("audio_transcriber.cli._setup_logger")
-    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
-    mocker.patch("audio_transcriber.cli.polish_text", return_value="текст")
+    mocker.patch("tool_audio.cli.transcribe", return_value=("текст", 0.0))
+    mocker.patch("tool_audio.cli.handle_processed_file")
+    mocker.patch("tool_audio.cli._setup_logger")
+    mocker.patch("tool_audio.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
+    mocker.patch("tool_audio.cli.polish_text", return_value="текст")
     result = runner.invoke(app, ["main", str(tmp_path), "--output", str(out_dir)])
     assert result.exit_code == 0, result.output
     txt_files = list(out_dir.glob("*.md"))
@@ -81,11 +81,11 @@ def test_transcribe_error_continues(tmp_path, mocker):
             raise RuntimeError("сломалось")
         return ("хороший текст", 10.0)
 
-    mocker.patch("audio_transcriber.cli.transcribe", side_effect=side_effect)
-    mocker.patch("audio_transcriber.cli.handle_processed_file")
-    mocker.patch("audio_transcriber.cli._setup_logger")
-    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
-    mocker.patch("audio_transcriber.cli.polish_text", return_value="хороший текст")
+    mocker.patch("tool_audio.cli.transcribe", side_effect=side_effect)
+    mocker.patch("tool_audio.cli.handle_processed_file")
+    mocker.patch("tool_audio.cli._setup_logger")
+    mocker.patch("tool_audio.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
+    mocker.patch("tool_audio.cli.polish_text", return_value="хороший текст")
     result = runner.invoke(app, ["main", str(tmp_path), "--output", str(out_dir)])
     assert result.exit_code == 1  # есть ошибка
     txt_files = list(out_dir.glob("*.md"))
@@ -96,12 +96,12 @@ def test_transcribe_error_continues(tmp_path, mocker):
 def test_polish_success(tmp_path, audio_file, mocker):
     raw_dir = tmp_path / "raw"
     polish_dir = tmp_path / "polish"
-    mocker.patch("audio_transcriber.cli.transcribe", return_value=("сырой текст", 5.0))
-    mocker.patch("audio_transcriber.cli.handle_processed_file")
-    mocker.patch("audio_transcriber.cli._setup_logger")
-    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=polish_dir)
-    mocker.patch("audio_transcriber.cli.cfg.get_deepseek_model", return_value="deepseek-chat")
-    mocker.patch("audio_transcriber.cli.polish_text", return_value="чистый текст")
+    mocker.patch("tool_audio.cli.transcribe", return_value=("сырой текст", 5.0))
+    mocker.patch("tool_audio.cli.handle_processed_file")
+    mocker.patch("tool_audio.cli._setup_logger")
+    mocker.patch("tool_audio.cli.cfg.get_polish_output", return_value=polish_dir)
+    mocker.patch("tool_audio.cli.cfg.get_deepseek_model", return_value="deepseek-chat")
+    mocker.patch("tool_audio.cli.polish_text", return_value="чистый текст")
 
     result = runner.invoke(app, ["main", str(audio_file), "--output", str(raw_dir)])
     assert result.exit_code == 0, result.output
@@ -112,15 +112,15 @@ def test_polish_success(tmp_path, audio_file, mocker):
 
 
 def test_polish_api_error(tmp_path, audio_file, mocker):
-    from audio_transcriber.polisher import ERROR_PREFIX
+    from tool_audio.polisher import ERROR_PREFIX
     raw_dir = tmp_path / "raw"
     polish_dir = tmp_path / "polish"
-    mocker.patch("audio_transcriber.cli.transcribe", return_value=("сырой текст", 5.0))
-    mocker.patch("audio_transcriber.cli.handle_processed_file")
-    mocker.patch("audio_transcriber.cli._setup_logger")
-    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=polish_dir)
-    mocker.patch("audio_transcriber.cli.cfg.get_deepseek_model", return_value="deepseek-chat")
-    mocker.patch("audio_transcriber.cli.polish_text", return_value=ERROR_PREFIX + "сырой текст")
+    mocker.patch("tool_audio.cli.transcribe", return_value=("сырой текст", 5.0))
+    mocker.patch("tool_audio.cli.handle_processed_file")
+    mocker.patch("tool_audio.cli._setup_logger")
+    mocker.patch("tool_audio.cli.cfg.get_polish_output", return_value=polish_dir)
+    mocker.patch("tool_audio.cli.cfg.get_deepseek_model", return_value="deepseek-chat")
+    mocker.patch("tool_audio.cli.polish_text", return_value=ERROR_PREFIX + "сырой текст")
 
     result = runner.invoke(app, ["main", str(audio_file), "--output", str(raw_dir)])
     assert result.exit_code == 0, result.output
@@ -135,14 +135,14 @@ def test_polish_success_moves_raw(tmp_path, audio_file, mocker):
     raw_dir = tmp_path / "raw"
     raw_done_dir = tmp_path / "raw" / "Done"
     polish_dir = tmp_path / "polish"
-    mocker.patch("audio_transcriber.cli.transcribe", return_value=("сырой текст", 5.0))
-    mocker.patch("audio_transcriber.cli._setup_logger")
-    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=polish_dir)
-    mocker.patch("audio_transcriber.cli.cfg.get_deepseek_model", return_value="deepseek-chat")
-    mocker.patch("audio_transcriber.cli.cfg.get_raw_done_folder", return_value=raw_done_dir)
-    mocker.patch("audio_transcriber.cli.cfg.get_after_transcription", return_value="keep")
-    mocker.patch("audio_transcriber.cli.cfg.get_processed_folder", return_value=None)
-    mocker.patch("audio_transcriber.cli.polish_text", return_value="чистый текст")
+    mocker.patch("tool_audio.cli.transcribe", return_value=("сырой текст", 5.0))
+    mocker.patch("tool_audio.cli._setup_logger")
+    mocker.patch("tool_audio.cli.cfg.get_polish_output", return_value=polish_dir)
+    mocker.patch("tool_audio.cli.cfg.get_deepseek_model", return_value="deepseek-chat")
+    mocker.patch("tool_audio.cli.cfg.get_raw_done_folder", return_value=raw_done_dir)
+    mocker.patch("tool_audio.cli.cfg.get_after_transcription", return_value="keep")
+    mocker.patch("tool_audio.cli.cfg.get_processed_folder", return_value=None)
+    mocker.patch("tool_audio.cli.polish_text", return_value="чистый текст")
 
     result = runner.invoke(app, ["main", str(audio_file), "--output", str(raw_dir)])
     assert result.exit_code == 0, result.output
@@ -155,18 +155,18 @@ def test_polish_success_moves_raw(tmp_path, audio_file, mocker):
 
 def test_polish_error_keeps_raw(tmp_path, audio_file, mocker):
     """При ошибке API raw-файл остаётся в raw/, не перемещается."""
-    from audio_transcriber.polisher import ERROR_PREFIX
+    from tool_audio.polisher import ERROR_PREFIX
     raw_dir = tmp_path / "raw"
     raw_done_dir = tmp_path / "raw" / "Done"
     polish_dir = tmp_path / "polish"
-    mocker.patch("audio_transcriber.cli.transcribe", return_value=("сырой текст", 5.0))
-    mocker.patch("audio_transcriber.cli._setup_logger")
-    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=polish_dir)
-    mocker.patch("audio_transcriber.cli.cfg.get_deepseek_model", return_value="deepseek-chat")
-    mocker.patch("audio_transcriber.cli.cfg.get_raw_done_folder", return_value=raw_done_dir)
-    mocker.patch("audio_transcriber.cli.cfg.get_after_transcription", return_value="keep")
-    mocker.patch("audio_transcriber.cli.cfg.get_processed_folder", return_value=None)
-    mocker.patch("audio_transcriber.cli.polish_text", return_value=ERROR_PREFIX + "сырой текст")
+    mocker.patch("tool_audio.cli.transcribe", return_value=("сырой текст", 5.0))
+    mocker.patch("tool_audio.cli._setup_logger")
+    mocker.patch("tool_audio.cli.cfg.get_polish_output", return_value=polish_dir)
+    mocker.patch("tool_audio.cli.cfg.get_deepseek_model", return_value="deepseek-chat")
+    mocker.patch("tool_audio.cli.cfg.get_raw_done_folder", return_value=raw_done_dir)
+    mocker.patch("tool_audio.cli.cfg.get_after_transcription", return_value="keep")
+    mocker.patch("tool_audio.cli.cfg.get_processed_folder", return_value=None)
+    mocker.patch("tool_audio.cli.polish_text", return_value=ERROR_PREFIX + "сырой текст")
 
     result = runner.invoke(app, ["main", str(audio_file), "--output", str(raw_dir)])
     assert result.exit_code == 0, result.output
@@ -199,12 +199,12 @@ def test_fmt_duration_large():
 def test_watch_transcribes_new_file(tmp_path, mocker):
     (tmp_path / "a.mp3").write_bytes(b"audio content")
     out_dir = tmp_path / "out"
-    mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 30.0))
-    mocker.patch("audio_transcriber.cli.handle_processed_file")
-    mocker.patch("audio_transcriber.cli._setup_logger")
-    mocker.patch("audio_transcriber.cli.cfg.get_default_output", return_value=out_dir)
-    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
-    mocker.patch("audio_transcriber.cli.polish_text", return_value="текст")
+    mocker.patch("tool_audio.cli.transcribe", return_value=("текст", 30.0))
+    mocker.patch("tool_audio.cli.handle_processed_file")
+    mocker.patch("tool_audio.cli._setup_logger")
+    mocker.patch("tool_audio.cli.cfg.get_default_output", return_value=out_dir)
+    mocker.patch("tool_audio.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
+    mocker.patch("tool_audio.cli.polish_text", return_value="текст")
     mocker.patch("time.sleep", side_effect=KeyboardInterrupt)
 
     result = runner.invoke(app, ["watch", str(tmp_path)])
@@ -216,12 +216,12 @@ def test_watch_transcribes_new_file(tmp_path, mocker):
 
 def test_watch_output_shows_duration(tmp_path, mocker):
     (tmp_path / "a.mp3").write_bytes(b"audio content")
-    mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 3661.0))
-    mocker.patch("audio_transcriber.cli.handle_processed_file")
-    mocker.patch("audio_transcriber.cli._setup_logger")
-    mocker.patch("audio_transcriber.cli.cfg.get_default_output", return_value=None)
-    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
-    mocker.patch("audio_transcriber.cli.polish_text", return_value="текст")
+    mocker.patch("tool_audio.cli.transcribe", return_value=("текст", 3661.0))
+    mocker.patch("tool_audio.cli.handle_processed_file")
+    mocker.patch("tool_audio.cli._setup_logger")
+    mocker.patch("tool_audio.cli.cfg.get_default_output", return_value=None)
+    mocker.patch("tool_audio.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
+    mocker.patch("tool_audio.cli.polish_text", return_value="текст")
     mocker.patch("time.sleep", side_effect=KeyboardInterrupt)
 
     result = runner.invoke(app, ["watch", str(tmp_path)])
@@ -231,13 +231,13 @@ def test_watch_output_shows_duration(tmp_path, mocker):
 def test_watch_skips_already_processed_file(tmp_path, mocker):
     """Файл с тем же хэшем не обрабатывается повторно (action=keep)."""
     (tmp_path / "a.mp3").write_bytes(b"audio content")
-    transcribe_mock = mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 10.0))
-    mocker.patch("audio_transcriber.cli.handle_processed_file")
-    mocker.patch("audio_transcriber.cli._setup_logger")
-    mocker.patch("audio_transcriber.cli.cfg.get_default_output", return_value=None)
-    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
-    mocker.patch("audio_transcriber.cli.polish_text", return_value="текст")
-    mocker.patch("audio_transcriber.cli.cfg.get_after_transcription", return_value="keep")
+    transcribe_mock = mocker.patch("tool_audio.cli.transcribe", return_value=("текст", 10.0))
+    mocker.patch("tool_audio.cli.handle_processed_file")
+    mocker.patch("tool_audio.cli._setup_logger")
+    mocker.patch("tool_audio.cli.cfg.get_default_output", return_value=None)
+    mocker.patch("tool_audio.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
+    mocker.patch("tool_audio.cli.polish_text", return_value="текст")
+    mocker.patch("tool_audio.cli.cfg.get_after_transcription", return_value="keep")
 
     call_count = 0
 
@@ -257,12 +257,12 @@ def test_watch_processes_new_file_with_same_name(tmp_path, mocker):
     """Новый файл с тем же именем, но другим содержимым (другой хэш) обрабатывается заново."""
     f = tmp_path / "a.mp3"
     f.write_bytes(b"first recording")
-    transcribe_mock = mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 10.0))
-    mocker.patch("audio_transcriber.cli.handle_processed_file")
-    mocker.patch("audio_transcriber.cli._setup_logger")
-    mocker.patch("audio_transcriber.cli.cfg.get_default_output", return_value=None)
-    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
-    mocker.patch("audio_transcriber.cli.polish_text", return_value="текст")
+    transcribe_mock = mocker.patch("tool_audio.cli.transcribe", return_value=("текст", 10.0))
+    mocker.patch("tool_audio.cli.handle_processed_file")
+    mocker.patch("tool_audio.cli._setup_logger")
+    mocker.patch("tool_audio.cli.cfg.get_default_output", return_value=None)
+    mocker.patch("tool_audio.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
+    mocker.patch("tool_audio.cli.polish_text", return_value="текст")
 
     call_count = 0
 
@@ -292,13 +292,13 @@ def test_watch_crash_recovery(tmp_path, mocker):
     storage_mod.add_job(f, h)
     assert storage_mod.is_processed(h)  # stuck in processing
 
-    transcribe_mock = mocker.patch("audio_transcriber.cli.transcribe", return_value=("текст", 10.0))
-    mocker.patch("audio_transcriber.cli.handle_processed_file")
-    mocker.patch("audio_transcriber.cli._setup_logger")
-    mocker.patch("audio_transcriber.cli.cfg.get_default_output", return_value=None)
-    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
-    mocker.patch("audio_transcriber.cli.polish_text", return_value="текст")
-    mocker.patch("audio_transcriber.cli.cfg.get_after_transcription", return_value="keep")
+    transcribe_mock = mocker.patch("tool_audio.cli.transcribe", return_value=("текст", 10.0))
+    mocker.patch("tool_audio.cli.handle_processed_file")
+    mocker.patch("tool_audio.cli._setup_logger")
+    mocker.patch("tool_audio.cli.cfg.get_default_output", return_value=None)
+    mocker.patch("tool_audio.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
+    mocker.patch("tool_audio.cli.polish_text", return_value="текст")
+    mocker.patch("tool_audio.cli.cfg.get_after_transcription", return_value="keep")
     mocker.patch("time.sleep", side_effect=KeyboardInterrupt)
 
     # watch calls init_db() on startup — should reset 'processing' → 'error', then re-process
@@ -316,12 +316,12 @@ def test_watch_continues_on_error(tmp_path, mocker):
             raise RuntimeError("сломалось")
         return ("текст", 5.0)
 
-    mocker.patch("audio_transcriber.cli.transcribe", side_effect=side_effect)
-    mocker.patch("audio_transcriber.cli.handle_processed_file")
-    mocker.patch("audio_transcriber.cli._setup_logger")
-    mocker.patch("audio_transcriber.cli.cfg.get_default_output", return_value=None)
-    mocker.patch("audio_transcriber.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
-    mocker.patch("audio_transcriber.cli.polish_text", return_value="текст")
+    mocker.patch("tool_audio.cli.transcribe", side_effect=side_effect)
+    mocker.patch("tool_audio.cli.handle_processed_file")
+    mocker.patch("tool_audio.cli._setup_logger")
+    mocker.patch("tool_audio.cli.cfg.get_default_output", return_value=None)
+    mocker.patch("tool_audio.cli.cfg.get_polish_output", return_value=tmp_path / "polish")
+    mocker.patch("tool_audio.cli.polish_text", return_value="текст")
     mocker.patch("time.sleep", side_effect=KeyboardInterrupt)
 
     result = runner.invoke(app, ["watch", str(tmp_path)])

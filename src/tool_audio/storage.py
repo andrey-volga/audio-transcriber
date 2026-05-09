@@ -3,7 +3,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path.home() / ".config" / "audio-transcriber" / "jobs.db"
+DB_PATH = Path.home() / ".config" / "tool-audio" / "jobs.db"
 
 
 def _connect() -> sqlite3.Connection:
