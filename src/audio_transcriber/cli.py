@@ -357,7 +357,26 @@ def watch(
 
     logger = _setup_logger()
     pid = os.getpid()
-    logger.info(f"WATCH_START pid={pid} source={source}")
+
+    lock_path = cfg.CONFIG_PATH.parent / "watch.lock"
+    if lock_path.exists():
+        old_pid = lock_path.read_text().strip()
+        if old_pid and Path(f"/proc/{old_pid}").exists():
+            err_console.print(f"Ошибка: watch уже запущен (pid={old_pid}). Останови его или сервис: systemctl --user stop audio-transcriber")
+            raise typer.Exit(1)
+    lock_path.write_text(str(pid))
+
+    polish_out = cfg.get_polish_output()
+    raw_done = cfg.get_raw_done_folder()
+    logger.info(
+        f"WATCH_START pid={pid}"
+        f" source={source}"
+        f" output={output_dir}"
+        f" polish_out={polish_out}"
+        f" raw_done={raw_done}"
+        f" model={whisper_model}"
+        f" interval={interval}s"
+    )
 
     storage.init_db()
 
@@ -420,3 +439,5 @@ def watch(
     except KeyboardInterrupt:
         logger.info(f"WATCH_STOP pid={pid}")
         console.print("\nОстановлено.")
+    finally:
+        lock_path.unlink(missing_ok=True)
