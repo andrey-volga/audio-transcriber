@@ -13,8 +13,8 @@ dependencies = [
 ]
 
 [project.scripts]
-transcribe = "tool_audio.cli:app"
-transcribe-config = "tool_audio.cli:config_app"
+tool-audio = "tool_audio.cli:app"
+tool-audio-config = "tool_audio.cli:config_app"
 
 [build-system]
 requires = ["hatchling"]

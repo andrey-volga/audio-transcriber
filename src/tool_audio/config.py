@@ -62,7 +62,7 @@ def get_log_path() -> Path:
     data = load()
     if "log_path" in data:
         return Path(data["log_path"]).expanduser()
-    return CONFIG_PATH.parent / "transcriber.log"
+    return CONFIG_PATH.parent / "tool-audio.log"
 
 
 def get_log_max_bytes() -> int:

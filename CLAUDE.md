@@ -15,14 +15,15 @@ uv run pytest
 uv run pytest tests/test_cli.py::test_name
 
 # Run the CLI
-uv run transcribe [SOURCE] [--output DIR] [--model tiny|base|small|medium|large] [--lang LANG]
-uv run transcribe watch [SOURCE] [--model MODEL] [--lang LANG]
-uv run transcribe polish [SOURCE] [--output PATH]
-uv run transcribe-config set-source|set-output|set-polish-output|show
+uv run tool-audio [SOURCE] [--output DIR] [--model tiny|base|small|medium|large] [--lang LANG]
+uv run tool-audio watch [SOURCE] [--model MODEL] [--lang LANG]
+uv run tool-audio polish [SOURCE] [--output PATH]
+uv run tool-audio-config set-source|set-output|set-polish-output|show
 
 # Install/update the global CLI (run after any code changes)
 make install
 uv tool install /home/and/dev/tool-audio --reinstall
+
 ```
 
 > **Важно:** глобальный бинарник `transcribe` (`~/.local/bin/transcribe`) устанавливается отдельно через `uv tool` и **не обновляется автоматически** при изменении кода. После любых изменений в проекте нужно запускать `make install`, иначе глобальная версия будет отставать (например, не вызывать polish в `watch`).
