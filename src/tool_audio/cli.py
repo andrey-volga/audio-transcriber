@@ -1,6 +1,7 @@
 import logging
 import logging.handlers
 import os
+import shutil
 import threading
 import time
 from datetime import datetime
@@ -9,10 +10,13 @@ from typing import Optional
 
 import typer
 from rich.console import Console
+from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
 
 from tool_audio import config as cfg
 from tool_audio import storage
+from dotenv import dotenv_values
 from tool_audio.polisher import ERROR_PREFIX, polish_text
 from tool_audio.transcriber import transcribe
 from tool_audio.utils import collect_audio_files, handle_processed_file, output_path
@@ -319,6 +323,72 @@ def main(
         raise typer.Exit(1)
 
 
+def _print_watch_dashboard(
+    source: Path,
+    model: str,
+    language: str,
+    interval: int,
+    action: str,
+    output_dir: "Path | None",
+    polish_out: Path,
+    raw_done: "Path | None",
+    processed_folder: "Path | None",
+) -> None:
+    provider = cfg.get_polish_provider()
+    key_names = {"deepseek": "DEEPSEEK_API_KEY", "groq": "GROQ_API_KEY"}
+    env_path = Path.home() / ".config" / "tool-audio" / ".env"
+    env_vars = dotenv_values(env_path) if env_path.exists() else {}
+    api_key_name = key_names.get(provider, "DEEPSEEK_API_KEY")
+
+    def dot(ok: bool) -> str:
+        return "[green]●[/green]" if ok else "[red]●[/red]"
+
+    def path_row(label: str, p: "Path | None") -> tuple:
+        if p is None:
+            return label, "[dim]не задана[/dim]"
+        mark = "[green]✓[/green]" if p.exists() else "[yellow]✗[/yellow]"
+        return label, f"{mark}  {p}"
+
+    ffmpeg_ok = shutil.which("ffmpeg") is not None
+    api_ok = bool(env_vars.get(api_key_name) or os.getenv(api_key_name))
+    stats = storage.get_stats()
+
+    t = Table.grid(padding=(0, 2))
+    t.add_column(style="dim", no_wrap=True)
+    t.add_column()
+
+    t.add_row("[bold]Компоненты[/bold]", "")
+    t.add_row("  ffmpeg", f"{dot(ffmpeg_ok)} {'найден' if ffmpeg_ok else '[red]не найден[/red]'}")
+    t.add_row(f"  {api_key_name}", f"{dot(api_ok)} {'задан' if api_ok else '[red]не задан[/red]'}  [dim]({provider})[/dim]")
+    t.add_row("  БД", f"{dot(True)} {stats['done']} обработано, [red]{stats['error']}[/red] ошибок")
+
+    t.add_row("", "")
+    t.add_row("[bold]Транскрибация[/bold]", "")
+    t.add_row("  Модель", f"whisper-{model}  [dim]lang={language}[/dim]")
+    t.add_row("  Интервал", f"{interval}s")
+    t.add_row("  После обработки", action)
+
+    t.add_row("", "")
+    t.add_row("[bold]Папки[/bold]", "")
+    for label, p in [
+        ("  Источник", source),
+        ("  Вывод (raw)", output_dir),
+        ("  Вывод (polish)", polish_out),
+        ("  Raw done", raw_done),
+        ("  Processed", processed_folder),
+    ]:
+        t.add_row(*path_row(label, p))
+
+    console.print(Panel(
+        t,
+        title="[bold cyan]tool-audio[/bold cyan]",
+        subtitle="[dim]Ctrl+C для остановки[/dim]",
+        border_style="dim",
+        expand=False,
+    ))
+    console.print()
+
+
 @app.command()
 def watch(
     source: Optional[Path] = typer.Argument(
@@ -380,8 +450,11 @@ def watch(
 
     storage.init_db()
 
-    console.print(f"Мониторинг: [cyan]{source}[/cyan]  [dim]модель: {whisper_model}  интервал: {interval}s[/dim]")
-    console.print("[dim]Ctrl+C для остановки[/dim]\n")
+    _print_watch_dashboard(
+        source=source, model=model, language=language, interval=interval,
+        action=action, output_dir=output_dir, polish_out=polish_out,
+        raw_done=raw_done, processed_folder=processed_folder,
+    )
 
     try:
         while True:

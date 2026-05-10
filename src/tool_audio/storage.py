@@ -84,3 +84,19 @@ def mark_error(hash: str, error: str) -> None:
             "UPDATE jobs SET status='error', error=?, updated_at=? WHERE file_hash=?",
             (error, now, hash),
         )
+
+
+def get_stats() -> dict[str, int]:
+    try:
+        with _connect() as con:
+            rows = con.execute(
+                "SELECT status, COUNT(*) FROM jobs GROUP BY status"
+            ).fetchall()
+        counts = {row[0]: row[1] for row in rows}
+        return {
+            "done": counts.get("done", 0),
+            "error": counts.get("error", 0),
+            "total": sum(counts.values()),
+        }
+    except Exception:
+        return {"done": 0, "error": 0, "total": 0}
