@@ -336,6 +336,8 @@ def _print_watch_dashboard(
 ) -> None:
     provider = cfg.get_polish_provider()
     key_names = {"deepseek": "DEEPSEEK_API_KEY", "groq": "GROQ_API_KEY"}
+    polish_models = {"deepseek": cfg.get_deepseek_model, "groq": cfg.get_groq_model}
+    polish_model = polish_models.get(provider, cfg.get_deepseek_model)()
     env_path = Path.home() / ".config" / "tool-audio" / ".env"
     env_vars = dotenv_values(env_path) if env_path.exists() else {}
     api_key_name = key_names.get(provider, "DEEPSEEK_API_KEY")
@@ -359,7 +361,7 @@ def _print_watch_dashboard(
 
     t.add_row("[bold]Компоненты[/bold]", "")
     t.add_row("  ffmpeg", f"{dot(ffmpeg_ok)} {'найден' if ffmpeg_ok else '[red]не найден[/red]'}")
-    t.add_row(f"  {api_key_name}", f"{dot(api_ok)} {'задан' if api_ok else '[red]не задан[/red]'}  [dim]({provider})[/dim]")
+    t.add_row(f"  {api_key_name}", f"{dot(api_ok)} {'задан' if api_ok else '[red]не задан[/red]'}  [dim]({provider} / {polish_model})[/dim]")
     t.add_row("  БД", f"{dot(True)} {stats['done']} обработано, [red]{stats['error']}[/red] ошибок")
 
     t.add_row("", "")
